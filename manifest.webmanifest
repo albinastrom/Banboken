@@ -1,0 +1,40 @@
+{
+  "name": "Banboken – golf",
+  "short_name": "Banboken",
+  "lang": "sv",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0F3D2E",
+  "theme_color": "#0F3D2E",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "id": "./",
+  "description": "Golfapp med GPS-avstånd, scorekort, WHS-handicap, matcher, statistik och Strokes Gained.",
+  "categories": [
+    "sports",
+    "health",
+    "lifestyle"
+  ],
+  "orientation": "portrait",
+  "dir": "ltr",
+  "prefer_related_applications": false
+}
