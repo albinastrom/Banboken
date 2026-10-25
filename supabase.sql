@@ -6,7 +6,7 @@
 -- ---------- Användarens dokument (ronder, banor, profil, golfbag, vänner, referens) ----------
 create table if not exists public.user_docs (
   user_id    uuid not null default auth.uid() references auth.users(id) on delete cascade,
-  kind       text not null check (kind in ('round','course','profile','bag','friends','baseline')),
+  kind       text not null check (kind in ('round','course','profile','bag','friends','baseline','ratings')),
   doc_id     text not null check (char_length(doc_id) between 1 and 64),
   data       jsonb,
   deleted    boolean not null default false,
@@ -36,6 +36,52 @@ end $$;
 drop trigger if exists user_docs_touch on public.user_docs;
 create trigger user_docs_touch before insert or update on public.user_docs
   for each row execute function public.banboken_touch();
+
+-- Om tabellen redan fanns från en tidigare version: tillåt även dokumenttypen 'ratings'.
+alter table public.user_docs drop constraint if exists user_docs_kind_check;
+alter table public.user_docs add constraint user_docs_kind_check check (kind in ('round','course','profile','bag','friends','baseline','ratings'));
+
+-- ---------- Delad officiell slopetabell ----------
+-- Alla (även utan konto) kan läsa. Bara konton i banboken_admins kan skapa, ändra eller ta bort rader.
+create table if not exists public.banboken_admins (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  added_at timestamptz not null default now()
+);
+alter table public.banboken_admins enable row level security;   -- inga policies: hanteras bara i SQL Editor
+
+create or replace function public.is_banboken_admin() returns boolean
+language sql security definer stable set search_path = public as $$
+  select exists (select 1 from public.banboken_admins where user_id = auth.uid());
+$$;
+revoke all on function public.is_banboken_admin() from public;
+grant execute on function public.is_banboken_admin() to anon, authenticated;
+
+create table if not exists public.tee_ratings (
+  rk         text primary key check (char_length(rk) between 5 and 300),
+  data       jsonb not null,
+  updated_at timestamptz not null default now(),
+  updated_by uuid default auth.uid(),
+  -- Grundkontroller i databasen; appen validerar dessutom alla fält vid import.
+  constraint tee_ratings_valid check (
+    (data->>'gender') in ('men','women') and (data->>'holes') in ('18','front9','back9')
+    and (data->>'slope')::numeric between 55 and 155
+    and (data->>'cr')::numeric between 25 and 90
+    and char_length(coalesce(data->>'source','')) > 0
+    and (data->>'verifiedAt') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+  )
+);
+alter table public.tee_ratings enable row level security;
+drop policy if exists "alla läser slopetabellen" on public.tee_ratings;
+drop policy if exists "admin skriver slopetabellen" on public.tee_ratings;
+create policy "alla läser slopetabellen" on public.tee_ratings for select using (true);
+create policy "admin skriver slopetabellen" on public.tee_ratings for all
+  using (public.is_banboken_admin()) with check (public.is_banboken_admin());
+drop trigger if exists tee_ratings_touch on public.tee_ratings;
+create trigger tee_ratings_touch before insert or update on public.tee_ratings
+  for each row execute function public.banboken_touch();
+
+-- Gör dig själv till administratör (byt e-postadressen och kör raden efter att du loggat in i appen en gång):
+-- insert into public.banboken_admins (user_id) select id from auth.users where email = 'din@epost.se';
 
 -- ---------- Livematcher ----------
 create table if not exists public.live_matches (

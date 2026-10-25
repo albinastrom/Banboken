@@ -420,6 +420,23 @@ table.lb tr:first-child td{font-weight:600}
 @media (min-width:700px){#app{border-left:1px solid var(--line);border-right:1px solid var(--line);min-height:100vh}}
 
 
+
+/* Tee och rating */
+dl.kv{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:6px 0}
+dl.kv div{background:var(--bg);padding:8px 10px}
+dl.kv dt{font-size:13px;color:var(--muted)}
+dl.kv dd{margin:0;font-weight:600;font-size:17px}
+.diffbox{border-top:1px solid var(--line);margin-top:12px;padding-top:6px}
+.field.inline{flex-direction:row;align-items:center;gap:10px}
+.field.inline span{flex:1}
+.field.inline select{width:auto;min-width:120px}
+.official{background:var(--surface);border-radius:12px;padding:8px 10px;margin:8px 0}
+.official p{margin:4px 0}
+pre.tmpl{white-space:pre-wrap;word-break:break-all;font-size:12px;background:var(--surface);padding:8px;border-radius:8px}
+table.lb.adm td,table.lb.adm th{font-size:13px;padding:6px 4px;white-space:nowrap}
+textarea{font:inherit;font-size:15px;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:10px;padding:10px;width:100%}
+.adm-tabs{margin-bottom:12px}
+.choice .tag{margin-top:4px}
 /* Live-GPS */
 .holemap{touch-action:none;user-select:none;-webkit-user-select:none}
 .gps-st .dot.weak{background:var(--gold)}
@@ -576,6 +593,13 @@ table.lb tr:first-child td{font-weight:600}
     return whsRound(courseHandicapExact(hi, slope, cr, par));
   }
 
+  // 9 hål (WHS): halva Handicap Index med 9-hålsbanans värdering.
+  function courseHandicap9(hi, slope9, cr9, par9) {
+    return whsRound((hi / 2) * (slope9 / 113) + (cr9 - par9));
+  }
+  // WHS 2024: förväntad score differential för 9 ospelade hål, utifrån Handicap Index.
+  function expected9(hi) { return hi * 0.52 + 1.2; }
+
   // Playing Handicap = Course Handicap × handicapreduktion, avrundat.
   function playingHandicap(ch, allowancePct) {
     var pct = allowancePct === undefined ? 100 : allowancePct;
@@ -637,7 +661,8 @@ table.lb tr:first-child td{font-weight:600}
     var par = sumPar(holes);
     var rated = teeRated(tee);
     // Utan CR/Slope går det inte att räkna handicap: ronden räknas som brutto (0 slag).
-    var ch = rated ? courseHandicap(round.hi, tee.slope, tee.cr, par) : 0;
+    var nine = holes.length === 9;
+    var ch = !rated ? 0 : nine ? courseHandicap9(round.hi, tee.slope, tee.cr, par) : courseHandicap(round.hi, tee.slope, tee.cr, par);
     var ph = playingHandicap(ch, round.allowance);
     var alloc = strokeAllocation(ph, holes);
     var gross = 0, net = 0, points = 0, putts = 0, played = 0, parPlayed = 0;
@@ -662,6 +687,15 @@ table.lb tr:first-child td{font-weight:600}
     }
     var complete = (played + pickedUp) === holes.length;
     var ags = complete ? adjustedGross(grossScores, holes, alloc) : null;
+    // Score differential: PCC från förbundet om den angetts (annars 0 = preliminär).
+    var pcc = typeof round.pcc === 'number' ? round.pcc : 0, diff18 = null, diff9 = null;
+    if (ags !== null && rated) {
+      if (nine) {
+        var d9 = (113 / tee.slope) * (ags - tee.cr - 0.5 * pcc);
+        diff9 = Math.round(d9 * 10) / 10;
+        diff18 = Math.round((d9 + expected9(round.hi)) * 10) / 10;
+      } else diff18 = scoreDifferential(ags, tee.cr, tee.slope, pcc);
+    }
     return {
       par: par, courseHandicap: ch, playingHandicap: ph, allocation: alloc,
       gross: gross, net: net, points: points, putts: putts, puttHoles: puttHoles,
@@ -669,7 +703,10 @@ table.lb tr:first-child td{font-weight:600}
       toPar: gross - parPlayed,
       firHit: firHit, firTot: firTot, girHit: girHit, girTot: girTot, penalties: pen,
       adjustedGross: ags,
-      differential: ags === null || !rated ? null : scoreDifferential(ags, tee.cr, tee.slope, 0),
+      differential: diff18,
+      differential9: diff9,
+      pccKnown: typeof round.pcc === 'number',
+      nine: nine,
       unrated: !rated
     };
   }
@@ -679,10 +716,10 @@ table.lb tr:first-child td{font-weight:600}
     var list = summaries.slice(0, n);
     var out = { rounds: list.length, avgGross: null, avgPoints: null, avgPutts: null, firPct: null, girPct: null, avgPen: null };
     if (!list.length) return out;
-    var full = list.filter(function (s) { return s.complete && s.pickedUp === 0; });
+    var full = list.filter(function (s) { return s.complete && s.pickedUp === 0 && !s.nine; });
     function avg(arr) { return arr.length ? arr.reduce(function (a, b) { return a + b; }, 0) / arr.length : null; }
     out.avgGross = avg(full.map(function (s) { return s.gross; }));
-    out.avgPoints = avg(list.map(function (s) { return s.points; }));
+    out.avgPoints = avg(list.filter(function (s) { return !s.nine; }).map(function (s) { return s.points; }));
     var puttRounds = list.filter(function (s) { return s.puttHoles === s.played && s.played > 0; });
     out.avgPutts = avg(puttRounds.map(function (s) { return s.putts * 18 / s.played; }));
     var fH = 0, fT = 0, gH = 0, gT = 0;
@@ -716,7 +753,7 @@ table.lb tr:first-child td{font-weight:600}
     playingHandicap: playingHandicap, strokesOnHole: strokesOnHole, strokeAllocation: strokeAllocation,
     stablefordPoints: stablefordPoints, netDoubleBogey: netDoubleBogey, adjustedGross: adjustedGross,
     scoreDifferential: scoreDifferential, sumPar: sumPar, summarizeRound: summarizeRound,
-    aggregate: aggregate, validateTee: validateTee, teeRated: teeRated
+    aggregate: aggregate, validateTee: validateTee, teeRated: teeRated, courseHandicap9: courseHandicap9, expected9: expected9
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
   root.Core = Core;
@@ -1652,7 +1689,7 @@ table.lb tr:first-child td{font-weight:600}
    Regel vid krock: osynkade ändringar på den här telefonen vinner och skickas vid nästa synk. */
 (function (root) {
   'use strict';
-  var KINDS = ['round', 'course', 'profile', 'bag', 'friends', 'baseline'];
+  var KINDS = ['round', 'course', 'profile', 'bag', 'friends', 'baseline', 'ratings'];
 
   function hash(str) {
     var h = 0x811c9dc5;
@@ -1666,10 +1703,11 @@ table.lb tr:first-child td{font-weight:600}
     (state.rounds || []).forEach(function (r) { d['round:' + r.id] = { kind: 'round', id: r.id, data: r }; });
     (state.courses || []).forEach(function (c) { if (c.id !== 'demo') d['course:' + c.id] = { kind: 'course', id: c.id, data: c }; });
     var p = state.profile || {};
-    d['profile:me'] = { kind: 'profile', id: 'me', data: { name: p.name, hi: p.hi, homeClub: p.homeClub, lang: p.lang, theme: p.theme, allowance: p.allowance } };
+    d['profile:me'] = { kind: 'profile', id: 'me', data: { name: p.name, hi: p.hi, homeClub: p.homeClub, lang: p.lang, theme: p.theme, allowance: p.allowance, gender: p.gender || null } };
     d['bag:all'] = { kind: 'bag', id: 'all', data: state.bag || [] };
     d['friends:all'] = { kind: 'friends', id: 'all', data: state.friends || [] };
     if (state.baseline) d['baseline:all'] = { kind: 'baseline', id: 'all', data: state.baseline };
+    if (state.ratingLib && state.ratingLib.length) d['ratings:all'] = { kind: 'ratings', id: 'all', data: state.ratingLib };
     return d;
   }
 
@@ -1694,6 +1732,7 @@ table.lb tr:first-child td{font-weight:600}
     else if (kind === 'bag') state.bag = Array.isArray(data) ? data : [];
     else if (kind === 'friends') state.friends = Array.isArray(data) ? data : [];
     else if (kind === 'baseline') state.baseline = data;
+    else if (kind === 'ratings') state.ratingLib = Array.isArray(data) ? data : [];
   }
   function removeDoc(state, kind, id) {
     if (kind === 'round') state.rounds = state.rounds.filter(function (r) { return r.id !== id; });
@@ -1701,6 +1740,7 @@ table.lb tr:first-child td{font-weight:600}
     else if (kind === 'baseline') state.baseline = null;
     else if (kind === 'bag') state.bag = [];
     else if (kind === 'friends') state.friends = [];
+    else if (kind === 'ratings') state.ratingLib = [];
   }
   function validRow(row) {
     if (!row || KINDS.indexOf(row.kind) < 0 || typeof row.doc_id !== 'string') return false;
@@ -1708,7 +1748,7 @@ table.lb tr:first-child td{font-weight:600}
     var d = row.data;
     if (row.kind === 'round') return d && d.id === row.doc_id && Array.isArray(d.holes) && d.tee && Array.isArray(d.tee.holes);
     if (row.kind === 'course') return d && d.id === row.doc_id && Array.isArray(d.tees);
-    if (row.kind === 'bag' || row.kind === 'friends') return Array.isArray(d);
+    if (row.kind === 'bag' || row.kind === 'friends' || row.kind === 'ratings') return Array.isArray(d);
     return d && typeof d === 'object';
   }
 
@@ -1719,7 +1759,7 @@ table.lb tr:first-child td{font-weight:600}
       if (!validRow(row)) { res.invalid++; return; }
       var key = row.kind + ':' + row.doc_id, local = docs[key];
       var localH = local ? hash(stable(local.data)) : null;
-      var single = row.kind === 'profile' || row.kind === 'bag' || row.kind === 'friends';
+      var single = row.kind === 'profile' || row.kind === 'bag' || row.kind === 'friends' || row.kind === 'ratings';
       // Profil, golfbag och vänner som aldrig synkats på den här telefonen tar emot molnets version.
       var dirty = local ? (synced[key] === undefined ? !single : synced[key] !== localH) : !!(synced[key] && synced[key] !== 'deleted');
       if (row.deleted) {
@@ -1762,11 +1802,260 @@ table.lb tr:first-child td{font-weight:600}
   root.Sync = Sync;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
+<script>/* Banboken – officiella tee- och ratinguppgifter.
+   Datamodell: Klubb → Bana → Slinga/hålkombination → Tee → Värdering (kön × 18 / 1–9 / 10–18).
+   En rad i slopetabellen = en officiell värdering för en tee:
+   { club, course, combo, osmRef?, tee, color?, length?, par, gender: men|women, holes: 18|front9|back9,
+     cr, slope, source, verifiedAt: 'ÅÅÅÅ-MM-DD', holeData?: [{par, si, length}] } */
+(function (root) {
+  'use strict';
+  var GENDERS = ['men', 'women'], HOLES = ['18', 'front9', 'back9'];
+
+  function fold(s) {
+    return String(s === null || s === undefined ? '' : s).trim().toLowerCase()
+      .replace(/[åä]/g, 'a').replace(/ö/g, 'o').replace(/[éè]/g, 'e').replace(/ü/g, 'u').replace(/\s+/g, ' ');
+  }
+  function num(v) {
+    if (v === null || v === undefined || v === '') return null;
+    var n = parseFloat(String(v).replace(',', '.').trim());
+    return isFinite(n) ? n : null;
+  }
+  function normGender(v) {
+    var f = fold(v);
+    if (['men', 'man', 'herr', 'herrar', 'h', 'm', 'male'].indexOf(f) >= 0) return 'men';
+    if (['women', 'woman', 'dam', 'damer', 'd', 'w', 'f', 'female', 'kvinna'].indexOf(f) >= 0) return 'women';
+    return null;
+  }
+  function normHoles(v) {
+    var f = fold(v).replace(/\s/g, '');
+    if (f === '' || f === '18') return '18';
+    if (['front9', '1-9', '1–9', 'ut', 'out', 'f9', 'första9'].indexOf(f) >= 0) return 'front9';
+    if (['back9', '10-18', '10–18', 'in', 'b9', 'sista9'].indexOf(f) >= 0) return 'back9';
+    return null;
+  }
+  function validDate(s) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) return false;
+    var d = new Date(s + 'T00:00:00Z');
+    return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+  }
+
+  // Normaliserar och validerar en rad. Returnerar { row, errors }.
+  function normalizeRow(raw, today) {
+    var e = [], r = {
+      club: String(raw.club || '').trim(), course: String(raw.course || '').trim(), combo: String(raw.combo || '').trim() || '18',
+      osmRef: raw.osmRef ? String(raw.osmRef).trim() : null, tee: String(raw.tee === undefined ? '' : raw.tee).trim(),
+      color: raw.color ? String(raw.color).trim() : null, length: num(raw.length), par: num(raw.par),
+      gender: normGender(raw.gender), holes: normHoles(raw.holes), cr: num(raw.cr), slope: num(raw.slope),
+      source: String(raw.source || '').trim(), verifiedAt: String(raw.verifiedAt || '').trim()
+    };
+    if (!r.club) e.push('club'); if (!r.course) e.push('course'); if (!r.tee) e.push('tee');
+    if (!r.gender) e.push('gender'); if (!r.holes) e.push('holes');
+    var nine = r.holes === 'front9' || r.holes === 'back9';
+    if (r.cr === null || r.cr < (nine ? 25 : 50) || r.cr > (nine ? 45 : 90)) e.push('cr');
+    if (r.slope === null || r.slope < 55 || r.slope > 155 || Math.round(r.slope) !== r.slope) e.push('slope');
+    if (r.par === null || r.par < (nine ? 27 : 54) || r.par > (nine ? 40 : 80) || Math.round(r.par) !== r.par) e.push('par');
+    if (r.length !== null && (r.length < (nine ? 600 : 1200) || r.length > (nine ? 4500 : 8500))) e.push('length');
+    if (!r.source) e.push('source');
+    if (!validDate(r.verifiedAt) || (today && r.verifiedAt > today)) e.push('verifiedAt');
+    if (raw.holeData) {
+      var hd = raw.holeData;
+      if (!Array.isArray(hd) || hd.length !== (nine ? 9 : 18) || hd.some(function (h) { return !(h && h.par >= 3 && h.par <= 6); })) e.push('holeData');
+      else {
+        var sis = hd.map(function (h) { return h.si; }).slice().sort(function (a, b) { return a - b; });
+        var want = []; for (var i = 1; i <= 18; i++) want.push(i);
+        if (!nine && sis.join() !== want.join()) e.push('holeData');
+        else if (!e.length || e.indexOf('holeData') < 0) r.holeData = hd.map(function (h) { return { par: h.par, si: h.si, length: num(h.length) }; });
+        if (!e.length && r.holeData && r.holeData.reduce(function (a, h) { return a + h.par; }, 0) !== r.par) e.push('parSum');
+      }
+    }
+    return { row: r, errors: e };
+  }
+
+  // CSV med rubrikrad; avgränsare ; eller , (autodetekteras). Svenska och engelska kolumnnamn.
+  var COLS = {
+    club: ['club', 'klubb', 'golfklubb'], course: ['course', 'bana'], combo: ['combo', 'slinga', 'halkombination', 'kombination'],
+    osmRef: ['osmref', 'osm_ref', 'osm'], tee: ['tee', 'tee_name', 'teenamn'], color: ['color', 'farg', 'teefarg'],
+    length: ['length', 'langd', 'banlangd'], par: ['par'], gender: ['gender', 'kon', 'vardering'], holes: ['holes', 'hal', 'rondtyp'],
+    cr: ['cr', 'course_rating', 'courserating'], slope: ['slope', 'slope_rating', 'sloperating'],
+    source: ['source', 'kalla'], verifiedAt: ['verifiedat', 'verified_at', 'verifierad', 'verifierat', 'datum']
+  };
+  function splitCsvLine(line, d) {
+    var out = [], cur = '', q = false;
+    for (var i = 0; i < line.length; i++) {
+      var ch = line.charAt(i);
+      if (q) { if (ch === '"') { if (line.charAt(i + 1) === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === d) { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    out.push(cur);
+    return out;
+  }
+  function parseCsv(text) {
+    var lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter(function (l) { return l.trim() !== ''; });
+    if (lines.length < 2) return { rows: [], errors: [{ line: 0, errors: ['empty'] }] };
+    var d = (lines[0].match(/;/g) || []).length >= (lines[0].match(/,/g) || []).length ? ';' : ',';
+    var head = splitCsvLine(lines[0], d).map(function (h) { return fold(h).replace(/[\s-]/g, '_').replace(/_+/g, '_'); });
+    var map = {};
+    Object.keys(COLS).forEach(function (k) {
+      for (var i = 0; i < head.length; i++) if (COLS[k].indexOf(head[i].replace(/_/g, '')) >= 0 || COLS[k].indexOf(head[i]) >= 0) { map[k] = i; break; }
+    });
+    var raws = lines.slice(1).map(function (l) {
+      var c = splitCsvLine(l, d), o = {};
+      Object.keys(map).forEach(function (k) { o[k] = (c[map[k]] || '').trim(); });
+      return o;
+    });
+    return { raws: raws, missingCols: ['club', 'course', 'tee', 'gender', 'cr', 'slope', 'par', 'source', 'verifiedAt'].filter(function (k) { return map[k] === undefined; }) };
+  }
+  function parseImport(text, today) {
+    var raws, missingCols = [], t = String(text || '').trim();
+    if (t.charAt(0) === '[' || t.charAt(0) === '{') {
+      var j = JSON.parse(t); raws = Array.isArray(j) ? j : (j.rows || j.tees || []);
+    } else { var c = parseCsv(t); raws = c.raws || []; missingCols = c.missingCols || []; }
+    var rows = [], errors = [];
+    raws.forEach(function (raw, i) {
+      var n = normalizeRow(raw, today);
+      if (n.errors.length) errors.push({ line: i + 2, errors: n.errors, tee: n.row.tee, club: n.row.club }); else rows.push(n.row);
+    });
+    return { rows: rows, errors: errors, missingCols: missingCols };
+  }
+
+  function rowKey(r) { return [fold(r.club), fold(r.course), fold(r.combo || '18'), fold(r.tee), r.gender, r.holes].join('|'); }
+  function teeKey(r) { return [fold(r.club), fold(r.course), fold(r.combo || '18'), fold(r.tee)].join('|'); }
+  function comboKey(r) { return [fold(r.club), fold(r.course), fold(r.combo || '18')].join('|'); }
+
+  // Lägger in nya/ändrade rader i biblioteket. Samma värdering (nyckel) ersätts, aldrig dubbleras.
+  function mergeLibrary(lib, rows, nowIso) {
+    var map = {}, out = (lib || []).slice(), res = { added: 0, updated: 0, unchanged: 0 };
+    out.forEach(function (r, i) { map[rowKey(r)] = i; });
+    rows.forEach(function (r) {
+      var k = rowKey(r), copy = JSON.parse(JSON.stringify(r)); copy.updatedAt = nowIso;
+      if (map[k] === undefined) { map[k] = out.length; out.push(copy); res.added++; return; }
+      var old = out[map[k]], same = ['cr', 'slope', 'par', 'length', 'color', 'source', 'verifiedAt', 'osmRef'].every(function (f) { return (old[f] === undefined ? null : old[f]) === (copy[f] === undefined ? null : copy[f]); }) && JSON.stringify(old.holeData || null) === JSON.stringify(copy.holeData || null);
+      if (same) { res.unchanged++; return; }
+      out[map[k]] = copy; res.updated++;
+    });
+    res.lib = out;
+    return res;
+  }
+
+  // Alla slingor/hålkombinationer i biblioteket.
+  function combos(lib) {
+    var m = {};
+    (lib || []).forEach(function (r) {
+      var k = comboKey(r);
+      if (!m[k]) m[k] = { key: k, club: r.club, course: r.course, combo: r.combo || '18', osmRef: r.osmRef || null, tees: {} };
+      if (r.osmRef && !m[k].osmRef) m[k].osmRef = r.osmRef;
+      m[k].tees[fold(r.tee)] = r.tee;
+    });
+    return Object.keys(m).sort().map(function (k) { return m[k]; });
+  }
+  // Vilken slinga en bana i appen hör till: uttrycklig koppling eller OSM-referens.
+  function comboForCourse(lib, course) {
+    var cs = combos(lib);
+    if (course.ratingLink) { var k = course.ratingLink; return cs.filter(function (c) { return c.key === k; })[0] || null; }
+    var ref = course.geo && course.geo.osmRef;
+    if (ref) { var byRef = cs.filter(function (c) { return c.osmRef === ref; }); if (byRef.length === 1) return byRef[0]; }
+    return null;
+  }
+  // Förslag på slinga utifrån namn (för koppling i administrationen).
+  function suggestCombos(lib, course) {
+    var n = fold(course.name) + ' ' + fold(course.club);
+    return combos(lib).map(function (c) {
+      var words = (fold(c.club) + ' ' + fold(c.course)).split(' ').filter(function (w) { return w.length > 2 && ['golf', 'klubb', 'golfklubb', 'club', 'bana'].indexOf(w) < 0; });
+      var hit = words.filter(function (w) { return n.indexOf(w) >= 0; }).length;
+      return { c: c, score: words.length ? hit / words.length : 0 };
+    }).filter(function (x) { return x.score > 0; }).sort(function (a, b) { return b.score - a.score; }).map(function (x) { return x.c; });
+  }
+
+  // Bygger tees för en bana från biblioteket. Befintliga tees med samma namn behåller id och håldata.
+  function buildTees(lib, combo, existingTees) {
+    var rows = (lib || []).filter(function (r) { return comboKey(r) === combo.key; }), byTee = {};
+    rows.forEach(function (r) { (byTee[fold(r.tee)] = byTee[fold(r.tee)] || []).push(r); });
+    var baseHoles = existingTees && existingTees[0] ? existingTees[0].holes : null;
+    return Object.keys(byTee).sort(function (a, b) {
+      var la = byTee[a][0].length || 0, lb = byTee[b][0].length || 0; return lb - la || a.localeCompare(b, 'sv');
+    }).map(function (tk) {
+      var rs = byTee[tk], ex = (existingTees || []).filter(function (x) { return fold(x.name) === tk; })[0];
+      var ratings = { men: {}, women: {} }, src = [], ver = '', len = null, color = null, hd = null;
+      rs.forEach(function (r) {
+        ratings[r.gender][r.holes] = { cr: r.cr, slope: r.slope, par: r.par, length: r.length, source: r.source, verifiedAt: r.verifiedAt };
+        if (src.indexOf(r.source) < 0) src.push(r.source);
+        if (r.verifiedAt > ver) ver = r.verifiedAt;
+        if (r.holes === '18' && r.length) len = r.length;
+        if (r.color) color = r.color;
+        if (r.holes === '18' && r.holeData) hd = r.holeData;
+      });
+      var holes = hd ? hd.map(function (h) { return { par: h.par, si: h.si, length: h.length }; }) : JSON.parse(JSON.stringify((ex && ex.holes) || baseHoles || []));
+      var any = ratings.men['18'] || ratings.women['18'];
+      return { id: ex ? ex.id : 'tee-' + tk.replace(/[^a-z0-9]/g, '') + '-' + rs[0].combo.replace(/[^A-Za-z0-9]/g, ''), name: rs[0].tee, color: color, length: len,
+        holes: holes, official: true, ratings: ratings, source: src.join(' · '), verifiedAt: ver, combo: combo.key,
+        cr: any ? any.cr : null, slope: any ? any.slope : null, unrated: !any };
+    });
+  }
+
+  // Rätt värdering för spelaren: kön × rondtyp. Egna (ej officiella) värden gäller oavsett kön men märks.
+  function ratingFor(tee, gender, holes) {
+    holes = holes || '18';
+    if (tee.ratings) {
+      var r = tee.ratings[gender] && tee.ratings[gender][holes];
+      return r ? { cr: r.cr, slope: r.slope, par: r.par, length: r.length, official: true, source: r.source, verifiedAt: r.verifiedAt, gender: gender, holes: holes } : null;
+    }
+    if (holes === '18' && typeof tee.cr === 'number' && typeof tee.slope === 'number') return { cr: tee.cr, slope: tee.slope, par: null, official: false, gender: null, holes: '18' };
+    return null;
+  }
+  // Tee för en 9-hålsrond: hålen 1–9 eller 10–18, hålindex rangordnat 1–9 inom de nio hålen.
+  function nineTee(tee, which, rating) {
+    var off = which === 'back9' ? 9 : 0, hs = tee.holes.slice(off, off + 9).map(function (h) { return { par: h.par, si: h.si, length: h.length }; });
+    var order = hs.map(function (h, i) { return { i: i, si: h.si }; }).sort(function (a, b) { return a.si - b.si; });
+    order.forEach(function (o, rank) { hs[o.i].si18 = hs[o.i].si; hs[o.i].si = rank + 1; });
+    return { id: tee.id + ':' + which, name: tee.name, holes: hs, cr: rating ? rating.cr : null, slope: rating ? rating.slope : null, unrated: !rating, nine: which, offset: off };
+  }
+
+  // Granskning av banorna i appen mot biblioteket.
+  function audit(courses, lib) {
+    var out = [], names = {};
+    (courses || []).forEach(function (c) {
+      if (c.demo) return;
+      var issues = [], k = fold(c.name);
+      if (names[k]) issues.push({ code: 'duplicateCourse' }); names[k] = 1;
+      if (!c.tees || !c.tees.length) issues.push({ code: 'noTees' });
+      var tn = {};
+      (c.tees || []).forEach(function (te) {
+        var f = fold(te.name);
+        if (tn[f]) issues.push({ code: 'duplicateTee', tee: te.name }); tn[f] = 1;
+        GENDERS.forEach(function (g) { if (!ratingFor(te, g, '18')) issues.push({ code: 'noRating', tee: te.name, gender: g }); });
+        var any = ratingFor(te, 'men') || ratingFor(te, 'women');
+        if (any && (any.cr < 50 || any.cr > 90 || any.slope < 55 || any.slope > 155)) issues.push({ code: 'invalidRating', tee: te.name });
+        if (te.holes && te.holes.length === 18) {
+          var sis = te.holes.map(function (h) { return h.si; }).slice().sort(function (a, b) { return a - b; }).join();
+          if (sis !== '1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18') issues.push({ code: 'badSi', tee: te.name });
+          var par = te.holes.reduce(function (a, h) { return a + h.par; }, 0), rp = te.ratings && (te.ratings.men['18'] || te.ratings.women['18']);
+          if (rp && rp.par && rp.par !== par) issues.push({ code: 'parMismatch', tee: te.name, a: par, b: rp.par });
+        } else issues.push({ code: 'holesMissing', tee: te.name });
+        if (!te.official && any) issues.push({ code: 'unverified', tee: te.name });
+      });
+      var link = comboForCourse(lib, c);
+      if (!link) issues.push({ code: 'notLinked' });
+      if (c.geo && c.geo.duplicates) issues.push({ code: 'multipleLoops' });
+      if (c.geo && Object.keys(c.geo.holes || {}).length > 18) issues.push({ code: 'multipleLoops' });
+      out.push({ id: c.id, name: c.name, issues: issues, ok: !issues.length });
+    });
+    return out;
+  }
+
+  var Ratings = { GENDERS: GENDERS, HOLES: HOLES, fold: fold, normalizeRow: normalizeRow, parseImport: parseImport, rowKey: rowKey, teeKey: teeKey, comboKey: comboKey,
+    mergeLibrary: mergeLibrary, combos: combos, comboForCourse: comboForCourse, suggestCombos: suggestCombos, buildTees: buildTees,
+    ratingFor: ratingFor, nineTee: nineTee, audit: audit, validDate: validDate };
+  if (typeof module !== 'undefined' && module.exports) module.exports = Ratings;
+  root.Ratings = Ratings;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
 <script>/* Banboken – tester för handicap- och poängberäkningar.
    Körs i appen (Profil → Kör beräkningstester) och med: node tests.js */
 (function (root) {
   'use strict';
-  function runTests(Core, Geo, Games, Stats, Sync) {
+  function runTests(Core, Geo, Games, Stats, Sync, Ratings) {
     var results = [];
     function eq(name, actual, expected) {
       var ok = JSON.stringify(actual) === JSON.stringify(expected);
@@ -1847,6 +2136,17 @@ table.lb tr:first-child td{font-weight:600}
     eq('Rond: justerat brutto', s.adjustedGross, 8 + (pars.slice(1, 17).reduce(function (a, b) { return a + b; }, 0) + 16) + 8);
     eq('Tee-validering godkänner korrekt tee', Core.validateTee(tee), []);
 
+
+    // ---------- 9 hål och PCC (WHS) ----------
+    eq('9 hål: Course Handicap = HI/2 × Slope/113 + (CR − Par): 14,0 / 113 / 34,5 / 36 → 6', Core.courseHandicap9(14, 113, 34.5, 36), 6);
+    eq('9 hål: förväntad differential för HI 14,0 = 8,48', Math.round(Core.expected9(14) * 100) / 100, 8.48);
+    var t9 = { cr: 33.8, slope: 113, holes: [] }; for (var n9 = 0; n9 < 9; n9++) t9.holes.push({ par: 4, si: n9 + 1 });
+    var r9 = { hi: 14, allowance: 100, holes: [] }; [5, 4, 5, 4, 5, 4, 5, 4, 5].forEach(function (g) { r9.holes.push({ strokes: g }); });
+    var s9 = Core.summarizeRound(r9, t9);
+    eq('9 hål: 41 slag, CR 33,8, Slope 113 → 9-hålsdifferential 7,2 och 18-hålsdifferential 15,7 (USGA:s exempel)', [s9.gross, s9.differential9, s9.differential, s9.nine], [41, 7.2, 15.7, true]);
+    var rp = JSON.parse(JSON.stringify(round)); rp.pcc = 1;
+    var sp = Core.summarizeRound(rp, tee);
+    eq('PCC +1 sänker score differential (preliminär → med PCC)', [sp.pccKnown, sp.differential < s.differential, s.pccKnown], [true, true, false]);
     // Banor utan Course Rating/Slope: bara brutto
     var ut = { name: 'Gul', cr: null, slope: null, unrated: true, holes: tee.holes };
     eq('Tee utan CR/Slope godkänns när det är markerat', Core.validateTee(ut), []);
@@ -2095,12 +2395,48 @@ var dj = { elements: [
       Sync.computePush(Sync.collectDocs(S3), syn3).upserts.forEach(function (u) { syn3[u.key] = u.h; });
       Sync.applyPull(S3, syn3, [{ kind: 'round', doc_id: 'r1', deleted: true }]);
       eq('Synk: borttagning från annan telefon tar bort rond', S3.rounds.length, 0);
+      var SR = { profile: {}, courses: [], rounds: [], bag: [], friends: [], baseline: null, ratingLib: [{ club: 'A', course: 'B', combo: '18', tee: '56', gender: 'men', holes: '18', cr: 70, slope: 125, par: 72, source: 'x', verifiedAt: '2026-01-01' }] };
+      eq('Synk: slopetabellen synkas som eget dokument', Sync.computePush(Sync.collectDocs(SR), {}).upserts.map(function (u) { return u.key; }).indexOf('ratings:all') >= 0, true);
       var lr = { extra: [{ id: 'p1', holes: [{}, {}, {}] }] };
       eq('Livematch: spelarens egna hål slås ihop', [Sync.mergeLiveScores(lr, { p1: { h: [5, 0, -1] } }), lr.extra[0].holes], [2, [{ strokes: 5 }, {}, { pickedUp: true }]]);
       eq('Livematch: okänd spelare ignoreras', Sync.mergeLiveScores(lr, { zz: { h: [3] } }), 0);
       var seq = [0.01, 0.2, 0.4, 0.6, 0.8, 0.99, 0.5, 0.3], qi = 0;
       var code = Sync.newCode(function () { return seq[qi++]; });
       eq('Livekod: 8 tecken utan förväxlingsbara tecken', [code.length, Sync.validCode(code), Sync.validCode('ABCD1234'), Sync.validCode('abcdefgh')], [8, true, false, false]);
+    }
+
+    if (Ratings) {
+      var today = '2026-10-25';
+      var csv = 'Klubb;Bana;Slinga;Tee;Färg;Längd;Par;Kön;Hål;CR;Slope;Källa;Verifierad\n' +
+        'Exempel GK;Södra;18;56;Gul;5600;72;Herr;18;70,1;128;Scorekort 2026 (exempel);2026-04-01\n' +
+        'Exempel GK;Södra;18;56;Gul;5600;72;Dam;18;75,4;136;Scorekort 2026 (exempel);2026-04-01\n' +
+        'Exempel GK;Södra;18;56;Gul;2790;36;Herr;1-9;34,9;127;Scorekort 2026 (exempel);2026-04-01\n' +
+        'Exempel GK;Södra;18;48;Röd;4800;72;Dam;18;70,9;125;Scorekort 2026 (exempel);2026-04-01\n' +
+        'Exempel GK;Södra;18;48;Röd;4800;72;Dam;18;99,0;125;Scorekort 2026 (exempel);2026-04-01\n' +
+        'Exempel GK;Södra;18;52;Blå;5200;72;Herr;18;68,0;121;;2026-04-01\n' +
+        'Exempel GK;Södra;18;40;Vit;4000;72;Okänd;18;66,0;115;Scorekort;2027-01-01';
+      var imp = Ratings.parseImport(csv, today);
+      eq('Import CSV: semikolon, decimalkomma, svenska kolumnnamn', imp.rows.length, 4);
+      eq('Import: ogiltig CR, saknad källa, okänt kön och framtida datum avvisas', imp.errors.map(function (x) { return x.errors.join(','); }), ['cr', 'source', 'gender,verifiedAt']);
+      var jimp = Ratings.parseImport(JSON.stringify([{ club: 'Exempel GK', course: 'Södra', tee: 56, gender: 'men', holes: '18', cr: 70.1, slope: 128, par: 72, source: 'Scorekort', verifiedAt: '2026-04-01' }]), today);
+      eq('Import JSON fungerar', jimp.rows.length, 1);
+      var m1 = Ratings.mergeLibrary([], imp.rows, '2026-10-25T10:00:00Z');
+      var m2 = Ratings.mergeLibrary(m1.lib, imp.rows.slice(0, 1).map(function (r) { var x = JSON.parse(JSON.stringify(r)); x.slope = 129; return x; }), '2026-10-26T10:00:00Z');
+      eq('Bibliotek: samma värdering ersätts, inga dubbletter', [m1.added, m2.updated, m2.added, m2.lib.length], [4, 1, 0, 4]);
+      var combo = Ratings.combos(m1.lib)[0];
+      var base = []; for (var b2 = 0; b2 < 18; b2++) base.push({ par: 4, si: b2 + 1, length: 300 });
+      var tees = Ratings.buildTees(m1.lib, combo, [{ id: 'old', name: '56', holes: base }]);
+      eq('Tees byggs från slopetabellen, längst först, befintligt id behålls', tees.map(function (x) { return [x.name, x.id === 'old']; }), [['56', true], ['48', false]]);
+      var g56 = tees[0];
+      eq('Herr och dam blandas inte ihop: tee 56', [Ratings.ratingFor(g56, 'men').cr, Ratings.ratingFor(g56, 'women').cr], [70.1, 75.4]);
+      eq('Saknad värdering ger ingen gissning (tee 48 herr)', Ratings.ratingFor(tees[1], 'men'), null);
+      eq('9-hålsvärdering hämtas separat', [Ratings.ratingFor(g56, 'men', 'front9').cr, Ratings.ratingFor(g56, 'men', 'back9')], [34.9, null]);
+      var nt = Ratings.nineTee({ id: 'x', name: '56', holes: [3, 1, 17, 5, 9, 7, 13, 11, 15, 2, 4, 6, 8, 10, 12, 14, 16, 18].map(function (si) { return { par: 4, si: si }; }) }, 'back9', { cr: 35, slope: 120 });
+      eq('9 hål: hål 10–18 med hålindex rangordnat 1–9', [nt.offset, nt.holes.map(function (h) { return h.si; }).join()], [9, '1,2,3,4,5,6,7,8,9']);
+      eq('Egen (ej officiell) värdering märks', Ratings.ratingFor({ cr: 71, slope: 125, holes: [] }, 'women').official, false);
+      var aud = Ratings.audit([{ id: 'c', name: 'Exempel GK Södra', tees: tees }, { id: 'd', name: 'Tom bana', tees: [] }], m1.lib);
+      eq('Granskning: saknad damvärdering och saknad koppling hittas', [aud[0].issues.some(function (x) { return x.code === 'noRating' && x.tee === '48' && x.gender === 'men'; }), aud[1].issues.map(function (x) { return x.code; }).indexOf('noTees') >= 0], [true, true]);
+      eq('Koppling via förslag på namn', Ratings.suggestCombos(m1.lib, { name: 'Exempel GK', club: '' })[0].course, 'Södra');
     }
     return results;
   }
@@ -2109,7 +2445,7 @@ var dj = { elements: [
 })(typeof window !== 'undefined' ? window : globalThis);
 
 if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
-  var r = module.exports(require('./core.js'), require('./geo.js'), require('./games.js'), require('./stats.js'), require('./sync.js'));
+  var r = module.exports(require('./core.js'), require('./geo.js'), require('./games.js'), require('./stats.js'), require('./sync.js'), require('./ratings.js'));
   var failed = r.filter(function (x) { return !x.ok; });
   r.forEach(function (x) { console.log((x.ok ? 'OK   ' : 'FEL  ') + x.name + (x.ok ? '' : '  (fick ' + JSON.stringify(x.actual) + ', väntat ' + JSON.stringify(x.expected) + ')')); });
   console.log('\n' + (r.length - failed.length) + ' av ' + r.length + ' tester godkända');
@@ -2607,6 +2943,88 @@ Object.assign(window.I18N.en, {
   testModeStart: 'Start GPS test mode', testModeHelp: 'GPS test mode simulates movement on the course so you can try the distances at home. It is always shown as SIMULATED and never used as your real position.',
   tapHint: 'Tap the map to measure to a point. Drag to move the map, pinch to zoom.'
 });
+
+/* Tee, Course Rating och Slope */
+Object.assign(window.I18N.sv, {
+  genderMen: 'Herr', genderWomen: 'Dam', genderShort: 'Kön', ratingGender: 'Värdering (tee-rating)', chooseGenderShort: 'Välj herr- eller damvärdering',
+  genderWhy: 'Tee har olika Course Rating och Slope för herrar och damer. Välj vilken värdering som gäller för dig.',
+  hm_18: '18 hål', hm_front9: 'Hål 1–9', hm_back9: 'Hål 10–18', holesShortH: 'Hål', holesToPlay: 'Antal hål',
+  noRatingFor: 'saknar {g}värdering för {h}', officialTag: 'Officiell', ownValueTag: 'Egen uppgift',
+  roundSummary: 'Rondens handicap', ratingFor: 'Värdering',
+  unratedFor: 'Tee {tee} saknar verifierad {g}värdering (Course Rating och Slope) för {h}. Ronden räknas brutto – utan handicapslag, nettoresultat eller score differential.',
+  unratedWhat: 'Komplettera: lägg in värderingen från banans officiella slopetabell under Profil → Banadministration (kräver admin-PIN).',
+  verr_nineSolo: '9-hålsronder kan just nu bara spelas utan medspelare.',
+  noDiffUnrated: 'Ingen score differential – teen saknar verifierad Course Rating och Slope.',
+  diffPrelim: 'Preliminär score differential (PCC ej angiven)', diffWithPcc: 'Score differential med PCC',
+  diffNineExpl: '9-hålsdifferential {d9} + förväntad differential för 9 ospelade hål {e} (WHS 2024).',
+  pccLabel: 'PCC för dagen (från Min Golf)', pccUnknown: 'Inte känd',
+  ratingSrcOfficial: 'Värdering: {g} · officiell · källa: {s} · verifierad {d}', ratingSrcOwn: 'Värdering: egen uppgift (ej verifierad).',
+  diffNotOfficial: 'Beräknat av appen. Det officiella handicapgrundande resultatet registreras i Min Golf.',
+  adminTitle: 'Banadministration', adminIntro: 'Slopetabeller, tee och Course Rating för banorna. Skyddat med admin-PIN.', adminOpen: 'Öppna banadministration',
+  adminCreatePin: 'Skapa en admin-PIN (4–8 siffror). Den behövs för att ändra officiella värderingar.', pinNew: 'Ny PIN', pinRepeat: 'Upprepa PIN', pinEnter: 'Admin-PIN', unlock: 'Lås upp',
+  adminPinNote: 'PIN-koden skyddar ändringar i den här telefonen. Den delade slopetabellen i molnet skyddas dessutom av databasen – bara konton som lagts till som administratörer kan ändra den.',
+  pinRule: 'PIN ska vara 4–8 siffror.', pinMismatch: 'PIN-koderna stämmer inte överens.', pinWrong: 'Fel PIN.', lockAdmin: 'Lås administrationen',
+  adm_report: 'Rapport', adm_tables: 'Slopetabeller', adm_edit: 'Lägg till/ändra', adm_import: 'Import', adm_link: 'Koppla banor', adm_shared: 'Delad tabell',
+  auditSummary: '{n} banor granskade · {ok} kompletta · {bad} behöver kompletteras · {rows} värderingar i slopetabellen',
+  auditNoCourses: 'Inga banor i appen ännu.',
+  iss_notLinked: 'Inte kopplad till någon slopetabell.', iss_noTees: 'Saknar tee.', iss_noRating: 'Tee {tee} saknar {g}värdering för 18 hål.',
+  iss_invalidRating: 'Tee {tee} har orimliga värden.', iss_parMismatch: 'Tee {tee}: hålens par ({a}) stämmer inte med slopetabellens par ({b}).',
+  iss_badSi: 'Tee {tee}: hålindex är inte 1–18 en gång var.', iss_holesMissing: 'Tee {tee}: håldata (par/index) saknas.', iss_duplicateTee: 'Dubblett: tee {tee} finns flera gånger.',
+  iss_duplicateCourse: 'Dubblett: banan finns flera gånger i appen.', iss_multipleLoops: 'Kartdata innehåller flera slingor – koppla rätt hålkombination.', iss_unverified: 'Tee {tee} har egna (ej verifierade) värden.',
+  noTables: 'Slopetabellen är tom. Importera eller lägg till värderingar.', combo: 'Slinga', ratingsWord: 'värderingar', sourceShort: 'Källa', editShort: 'Ändra',
+  editHelp: 'En rad = en officiell värdering (tee × kön × 18/1–9/10–18). Källa och verifieringsdatum krävs.', teeNameShort: 'Tee (namn eller nummer)', teeColor: 'Färg',
+  sourceLong: 'Källa (t.ex. klubbens slopetabell 2026)', verifiedDate: 'Verifierad',
+  importHelp: 'Importera CSV (semikolon eller komma) eller JSON. En rad per värdering. Kolumner:', chooseFile: 'Välj fil', orPaste: 'eller klistra in', importBtn: 'Importera',
+  csvTemplate: 'Klubb;Bana;Slinga;OSM;Tee;Färg;Längd;Par;Kön;Hål;CR;Slope;Källa;Verifierad\nKlubbnamn;Bananamn;18;way/123;56;Gul;5600;72;Herr;18;70,1;128;Klubbens slopetabell;2026-04-01',
+  importResult: '{a} nya · {u} uppdaterade · {s} oförändrade · {e} rader med fel · {c} banor uppdaterade', missingCols: 'Kolumner som saknas', importErrLine: 'Rad {l} (tee {tee}): {f}',
+  fld_club: 'klubb', fld_course: 'bana', fld_tee: 'tee', fld_gender: 'kön (Herr/Dam)', fld_holes: 'hål (18, 1-9, 10-18)', fld_cr: 'Course Rating', fld_slope: 'Slope (heltal 55–155)', fld_par: 'par',
+  fld_length: 'längd', fld_source: 'källa', fld_verifiedAt: 'verifieringsdatum (ÅÅÅÅ-MM-DD, inte i framtiden)', fld_holeData: 'håldata', fld_parSum: 'hålens par stämmer inte med totalpar', fld_format: 'filformat', fld_empty: 'tom fil',
+  exportCsv: 'Exportera slopetabellen (CSV)', linkHelp: 'Koppla varje bana i appen till rätt slinga i slopetabellen. Då får banan automatiskt alla officiella tee och värderingar.', notLinkedOpt: 'Ingen koppling',
+  sharedHelp: 'Den delade slopetabellen i ditt Supabase-projekt läses av alla som använder appen med projektet. Bara administratörer (tabellen banboken_admins) kan publicera.',
+  sharedCount: '{n} delade värderingar · hämtade {d}', sharedPull: 'Hämta delad tabell', sharedPush: 'Publicera mina värderingar', notAdmin: 'Ditt konto är inte administratör för den delade tabellen.',
+  sharedPulled: '{n} värderingar hämtade.', sharedPushed: '{n} värderingar publicerade.', deleteRowConfirm: 'Ta bort värderingen?',
+  officialLocked: 'Officiell värdering – ändras bara i Banadministration.'
+});
+Object.assign(window.I18N.en, {
+  genderMen: 'Men', genderWomen: 'Women', genderShort: 'Gender', ratingGender: 'Rating set (tee rating)', chooseGenderShort: 'Choose men’s or women’s rating',
+  genderWhy: 'Tees have different Course and Slope Ratings for men and women. Choose which rating applies to you.',
+  hm_18: '18 holes', hm_front9: 'Holes 1–9', hm_back9: 'Holes 10–18', holesShortH: 'Holes', holesToPlay: 'Holes to play',
+  noRatingFor: 'no {g} rating for {h}', officialTag: 'Official', ownValueTag: 'Own value',
+  roundSummary: 'Handicap for the round', ratingFor: 'Rating',
+  unratedFor: 'Tee {tee} has no verified {g} rating (Course Rating and Slope) for {h}. The round is gross – no handicap strokes, net score or score differential.',
+  unratedWhat: 'To complete: add the rating from the course’s official slope table under Profile → Course administration (admin PIN required).',
+  verr_nineSolo: '9-hole rounds can currently only be played without playing partners.',
+  noDiffUnrated: 'No score differential – the tee has no verified Course Rating and Slope.',
+  diffPrelim: 'Preliminary score differential (PCC not entered)', diffWithPcc: 'Score differential with PCC',
+  diffNineExpl: '9-hole differential {d9} + expected differential for 9 unplayed holes {e} (WHS 2024).',
+  pccLabel: 'PCC for the day (from your federation)', pccUnknown: 'Not known',
+  ratingSrcOfficial: 'Rating: {g} · official · source: {s} · verified {d}', ratingSrcOwn: 'Rating: own value (not verified).',
+  diffNotOfficial: 'Calculated by the app. The official handicap score is posted with your federation.',
+  adminTitle: 'Course administration', adminIntro: 'Slope tables, tees and Course Ratings for the courses. Protected by an admin PIN.', adminOpen: 'Open course administration',
+  adminCreatePin: 'Create an admin PIN (4–8 digits). It is needed to change official ratings.', pinNew: 'New PIN', pinRepeat: 'Repeat PIN', pinEnter: 'Admin PIN', unlock: 'Unlock',
+  adminPinNote: 'The PIN protects changes on this phone. The shared slope table in the cloud is also protected by the database – only accounts added as administrators can change it.',
+  pinRule: 'The PIN must be 4–8 digits.', pinMismatch: 'The PINs do not match.', pinWrong: 'Wrong PIN.', lockAdmin: 'Lock administration',
+  adm_report: 'Report', adm_tables: 'Slope tables', adm_edit: 'Add/edit', adm_import: 'Import', adm_link: 'Link courses', adm_shared: 'Shared table',
+  auditSummary: '{n} courses checked · {ok} complete · {bad} need completing · {rows} ratings in the slope table',
+  auditNoCourses: 'No courses in the app yet.',
+  iss_notLinked: 'Not linked to a slope table.', iss_noTees: 'No tees.', iss_noRating: 'Tee {tee} has no {g} rating for 18 holes.',
+  iss_invalidRating: 'Tee {tee} has implausible values.', iss_parMismatch: 'Tee {tee}: hole pars ({a}) do not match the slope table par ({b}).',
+  iss_badSi: 'Tee {tee}: stroke indexes are not 1–18 once each.', iss_holesMissing: 'Tee {tee}: hole data (par/index) missing.', iss_duplicateTee: 'Duplicate: tee {tee} appears more than once.',
+  iss_duplicateCourse: 'Duplicate: the course appears more than once in the app.', iss_multipleLoops: 'Map data contains several loops – link the right hole combination.', iss_unverified: 'Tee {tee} has own (unverified) values.',
+  noTables: 'The slope table is empty. Import or add ratings.', combo: 'Loop', ratingsWord: 'ratings', sourceShort: 'Source', editShort: 'Edit',
+  editHelp: 'One row = one official rating (tee × gender × 18/1–9/10–18). Source and verification date are required.', teeNameShort: 'Tee (name or number)', teeColor: 'Colour',
+  sourceLong: 'Source (e.g. club slope table 2026)', verifiedDate: 'Verified',
+  importHelp: 'Import CSV (semicolon or comma) or JSON. One row per rating. Columns:', chooseFile: 'Choose file', orPaste: 'or paste', importBtn: 'Import',
+  csvTemplate: 'Club;Course;Loop;OSM;Tee;Colour;Length;Par;Gender;Holes;CR;Slope;Source;Verified\nClub name;Course name;18;way/123;56;Yellow;5600;72;Men;18;70.1;128;Club slope table;2026-04-01',
+  importResult: '{a} new · {u} updated · {s} unchanged · {e} rows with errors · {c} courses updated', missingCols: 'Missing columns', importErrLine: 'Row {l} (tee {tee}): {f}',
+  fld_club: 'club', fld_course: 'course', fld_tee: 'tee', fld_gender: 'gender (Men/Women)', fld_holes: 'holes (18, 1-9, 10-18)', fld_cr: 'Course Rating', fld_slope: 'Slope (integer 55–155)', fld_par: 'par',
+  fld_length: 'length', fld_source: 'source', fld_verifiedAt: 'verification date (YYYY-MM-DD, not in the future)', fld_holeData: 'hole data', fld_parSum: 'hole pars do not match total par', fld_format: 'file format', fld_empty: 'empty file',
+  exportCsv: 'Export slope table (CSV)', linkHelp: 'Link each course in the app to the right loop in the slope table. The course then gets all official tees and ratings automatically.', notLinkedOpt: 'Not linked',
+  sharedHelp: 'The shared slope table in your Supabase project is read by everyone using the app with that project. Only administrators (table banboken_admins) can publish.',
+  sharedCount: '{n} shared ratings · loaded {d}', sharedPull: 'Load shared table', sharedPush: 'Publish my ratings', notAdmin: 'Your account is not an administrator of the shared table.',
+  sharedPulled: '{n} ratings loaded.', sharedPushed: '{n} ratings published.', deleteRowConfirm: 'Delete this rating?',
+  officialLocked: 'Official rating – changed only in Course administration.'
+});
 </script>
 <script>/* Banboken – etapp 1. Offline-först: all data sparas lokalt efter varje ändring. */
 (function () {
@@ -2637,12 +3055,14 @@ Object.assign(window.I18N.en, {
   function defaultState() {
     return {
       version: 1,
-      profile: { name: '', hi: null, homeClub: '', lang: 'sv', theme: 'auto', allowance: 100 },
+      profile: { name: '', hi: null, homeClub: '', lang: 'sv', theme: 'auto', allowance: 100, gender: null },
       courses: [demoCourse()],
       rounds: [],
       weatherCache: {},
       friends: [],
       bag: [],
+      ratingLib: [],
+      admin: { pinHash: null },
       baseline: null,
       ui: { showDemo: false, statsN: 10, sat: true, gpsAuto: false, mapOpen: true, wakeLock: false, shotLog: false, trendMetric: 'points', sgBase: 'personal' }
     };
@@ -2660,6 +3080,8 @@ Object.assign(window.I18N.en, {
           s.weatherCache = s.weatherCache || {};
           s.friends = s.friends || [];
           s.bag = s.bag || [];
+          s.ratingLib = s.ratingLib || [];
+          s.admin = s.admin || { pinHash: null };
           if (s.baseline === undefined) s.baseline = null;
           s.courses = s.courses || [];
           s.rounds = s.rounds || [];
@@ -2773,14 +3195,14 @@ Object.assign(window.I18N.en, {
     var r = activeRound(); if (!r || !gps.pos) { refreshGps(); return; }
     var c = courseById(r.courseId), g = c && c.geo; gps.suggest = null;
     if (g) {
-      var me = posLL(), next = g.holes[String(r.current + 2)], cur = r.holes[r.current];
+      var me = posLL(), next = r.current + 1 < r.holes.length ? g.holes[String(holeNo(r, r.current + 1))] : null, cur = r.holes[r.current];
       var done = typeof cur.strokes === 'number' || cur.pickedUp;
       if (next && done && G.dist(me, teePoint(next)) < 25 && gps.lastAuto !== r.current + 1) {
         gps.lastAuto = r.current + 1; r.current++; gps.target = null; save();
         view.flash = t('autoHole') + ' ' + (r.current + 1); render(); return;
       }
       var nh = G.nearestHole(me, g.holes);
-      if (nh && nh.d < 30) { var idx = +nh.ref - 1; if (idx !== r.current && idx >= 0 && idx < r.holes.length) gps.suggest = idx; }
+      if (nh && nh.d < 30) { var idx = +nh.ref - 1 - (r.holeOffset || 0); if (idx !== r.current && idx >= 0 && idx < r.holes.length) gps.suggest = idx; }
     }
     refreshGps();
   }
@@ -2806,7 +3228,7 @@ Object.assign(window.I18N.en, {
     };
   }
   function holeCtx(r) {
-    var c = courseById(r.courseId), g = c && c.geo, hole = g && g.holes[String(r.current + 1)];
+    var c = courseById(r.courseId), g = c && c.geo, hole = g && g.holes[String(holeNo(r, r.current))];
     if (!hole) return { c: c, g: g, hole: null };
     var gc = greenCenter(hole), me = posLL();
     var fromTee = !me || G.dist(me, gc) > 800;
@@ -2890,7 +3312,7 @@ Object.assign(window.I18N.en, {
     if (!okPos) h += '<p class="note">' + esc(t('regNeedAcc')) + '</p>';
     return h + '<button class="btn ghost wide" data-act="greg-close">' + esc(t('close')) + '</button></div>';
   }
-  function r0hole() { var r = activeRound(); return r ? r.current + 1 : ''; }
+  function r0hole() { var r = activeRound(); return r ? holeNo(r, r.current) : ''; }
 
   function gpsInner(r) {
     var x = holeCtx(r), h = '';
@@ -2898,7 +3320,7 @@ Object.assign(window.I18N.en, {
     h += '<div class="gps-top"><span id="gps-status">' + gpsStatusHtml() + '</span>' + (x.g.source === 'demo' ? '<em class="tag demo">' + esc(t('demoGeo')) + '</em>' : '<em class="tag">' + esc(t('osmUnverified')) + '</em>') + '</div>';
     if (gps.test) h += testPanel();
     if (gps.suggest !== null && gps.suggest !== r.current) h += '<button class="suggest" data-act="go:' + gps.suggest + '">' + esc(t('seemsOnHole')) + ' ' + (gps.suggest + 1) + ' – ' + esc(t('switch')) + '</button>';
-    if (!x.hole) return h + '<p class="warn">' + esc(t('holeNoCoords').replace('{n}', r.current + 1)) + '</p>';
+    if (!x.hole) return h + '<p class="warn">' + esc(t('holeNoCoords').replace('{n}', holeNo(r, r.current))) + '</p>';
     h += '<div id="gps-live">' + liveHtml(r, x) + '</div>';
     if (view.gregOpen) h += gregPanel(x);
     h += '<div class="maptools"><button class="chip" data-act="map-toggle">' + esc(state.ui.mapOpen ? t('hideMap') : t('showMap')) + '</button>';
@@ -3270,9 +3692,9 @@ Object.assign(window.I18N.en, {
   }
   function setupPlayers(c, te) {
     var s = view.setup;
-    return [{ id: 'me', name: state.profile.name || t('me'), hi: state.profile.hi, tee: te, holes: [] }].concat((s.extra || []).map(function (p) {
+    return [{ id: 'me', name: state.profile.name || t('me'), hi: state.profile.hi, tee: resolvedTee(te, playerGender(), s.holesMode || '18'), holes: [] }].concat((s.extra || []).map(function (p) {
       var pt = c.tees.filter(function (x) { return x.id === p.teeId; })[0] || te;
-      return { id: p.id, name: p.name, hi: p.hi, tee: pt, holes: [] };
+      return { id: p.id, name: p.name, hi: p.hi, tee: resolvedTee(pt, p.gender || playerGender(), '18'), holes: [] };
     }));
   }
   function sideSize(id, teams) { var tm = teams.filter(function (x) { return x.id === id; })[0]; return tm ? tm.members.length : 1; }
@@ -3305,6 +3727,7 @@ Object.assign(window.I18N.en, {
     var games = setupGames(teams);
     games.forEach(function (g) { var e = GM.validate(g, ctx); if (e) errs.push({ type: g.type, code: e }); });
     if (games.length && players.some(function (p) { return !C.teeRated(p.tee); })) errs.push({ type: null, code: 'unrated' });
+    if ((s.holesMode || '18') !== '18' && (s.extra || []).length) errs.push({ type: null, code: 'nineSolo' });
     if (s.mode === 'team') {
       if (!games.length) errs.push({ type: null, code: 'needGame' });
       if (players.some(function (p) { return !(s.teamOf || {})[p.id]; })) errs.push({ type: null, code: 'allInTeam' });
@@ -3320,6 +3743,7 @@ Object.assign(window.I18N.en, {
     s.extra.forEach(function (p, i) {
       h += '<div class="pl"><span class="pl-n"><b>' + esc(p.name) + '</b><small>' + esc(t('handicapIndex')) + ' ' + esc(C.formatHandicap(p.hi)) + '</small></span><button class="chip" data-act="xdel:' + i + '" aria-label="' + esc(t('remove')) + ' ' + esc(p.name) + '">✕</button></div>';
       if (c.tees.length > 1) h += '<div class="seg small">' + c.tees.map(function (x) { return '<button class="' + ((p.teeId || te.id) === x.id ? 'on' : '') + '" data-act="xtee:' + i + ':' + x.id + '">' + esc(x.name) + '</button>'; }).join('') + '</div>';
+      h += '<div class="seg small">' + ['men', 'women'].map(function (g) { return '<button class="' + ((p.gender || playerGender() || 'men') === g ? 'on' : '') + '" data-act="xg:' + i + ':' + g + '">' + esc(genderName(g)) + '</button>'; }).join('') + '</div>';
     });
     if (s.extra.length < 7) {
       var fr = (state.friends || []).filter(function (f) { return !s.extra.some(function (p) { return p.name === f.name; }); });
@@ -3401,7 +3825,7 @@ Object.assign(window.I18N.en, {
     r.meName = state.profile.name || t('me');
     r.extra = s.extra.map(function (p) {
       var pt = c.tees.filter(function (x) { return x.id === p.teeId; })[0] || te;
-      return { id: p.id, name: p.name, hi: p.hi, tee: clone(pt), holes: pt.holes.map(function () { return {}; }) };
+      return { id: p.id, name: p.name, hi: p.hi, gender: p.gender || playerGender(), tee: resolvedTee(pt, p.gender || playerGender(), '18'), holes: pt.holes.map(function () { return {}; }) };
     });
     r.teams = setupTeams();
     r.mode = s.mode === 'team' ? 'team' : 'own';
@@ -3732,7 +4156,7 @@ Object.assign(window.I18N.en, {
     h += '<p class="mini">' + esc(fmt(t('shotN'), { n: shots.length + 1 })) + '</p><div class="pick lies">' + ST.LIES.map(function (l) {
       return '<button class="' + (sd.lie === l ? 'on' : '') + '" data-act="sl-lie:' + l + '">' + esc(lieName(l)) + '</button>';
     }).join('') + '</div>';
-    var c = courseById(r.courseId), canGps = gps.pos && c && c.geo && c.geo.holes[String(r.current + 1)];
+    var c = courseById(r.courseId), canGps = gps.pos && c && c.geo && c.geo.holes[String(holeNo(r, r.current))];
     h += '<div class="distrow"><label class="field"><span>' + esc(t('distLeft')) + '</span><input data-field="sd.dist" inputmode="decimal" value="' + esc(sd.dist) + '" placeholder="m"></label>' +
       '<button class="btn ghost" data-act="sl-gps"' + (canGps ? '' : ' disabled') + '>GPS</button></div>';
     if ((state.bag || []).length && sd.lie !== 'green') {
@@ -3961,7 +4385,7 @@ Object.assign(window.I18N.en, {
     if (manual) render();
     return pullAll().then(function (res) {
       syncState.conflicts = res.conflicts;
-      if (res.changed) { saveLocalOnly(); render(); }
+      if (res.changed) { applyRatings(); saveLocalOnly(); render(); }
       return pushAll();
     }).then(function () { cloud.lastSync = new Date().toISOString(); saveCloud(); })
       .catch(function (e) { syncState.err = e.message || String(e); })
@@ -4313,7 +4737,7 @@ Object.assign(window.I18N.en, {
     if (cur && cur.kind === 'saved') {
       h += '<h3>' + esc(t('chooseTee')) + '</h3><div class="choices">' + cur.course.tees.map(function (te, i) {
         var on = (pl.teeId || cur.course.tees[0].id) === te.id;
-        return '<button class="choice' + (on ? ' on' : '') + '" data-act="ptee:' + te.id + '"><strong>' + esc(te.name) + '</strong><small>' + (C.teeRated(te) ? 'CR ' + dec(te.cr) + ' · Slope ' + te.slope : esc(t('noRatingTag'))) + ' · Par ' + C.sumPar(te.holes) + '</small></button>';
+        return '<button class="choice' + (on ? ' on' : '') + '" data-act="ptee:' + te.id + '"><strong>' + esc(te.name) + (te.color ? ' <small>' + esc(te.color) + '</small>' : '') + '</strong><small>' + esc(ratingLine(te, playerGender(), '18')) + ' · Par ' + C.sumPar(te.holes) + '</small>' + ratingBadge(te, playerGender(), '18') + '</button>';
       }).join('') + '</div>';
     } else if (cur) h += '<p class="note">' + esc(t('dirCourseNote')) + '</p>';
     if (pl.err) h += '<p class="warn">' + esc(pl.err) + '</p>';
@@ -4394,6 +4818,238 @@ Object.assign(window.I18N.en, {
       if (pl.busy !== token) return;
       pl.busy = false; clearInterval(pl.ticker); pl.err = t('geoFailed') + netDetail(e) + previewSuffix(); render();
     });
+  }
+
+  // ======================= TEE, COURSE RATING OCH SLOPE =======================
+  var RT = window.Ratings, SHARED_KEY = 'banboken:shared-ratings';
+  var sharedRatings = (function () { try { var d = JSON.parse(localStorage.getItem(SHARED_KEY) || 'null'); return d && Array.isArray(d.rows) ? d : { rows: [], at: null }; } catch (e) { return { rows: [], at: null }; } })();
+  var libCache = { key: null, lib: [] };
+  // Effektivt bibliotek: delad officiell tabell + lokala rader (lokala ersätter samma värdering).
+  function effLib() {
+    var own = state.ratingLib || [], key = sharedRatings.rows.length + ':' + (sharedRatings.at || '') + ':' + own.length + ':' + (own.length ? own[own.length - 1].updatedAt : '');
+    if (libCache.key !== key) libCache = { key: key, lib: RT.mergeLibrary(sharedRatings.rows, own, '').lib };
+    return libCache.lib;
+  }
+  function playerGender() { return state.profile.gender || null; }
+  // Lägger in officiella tees från slopetabellen på varje kopplad bana. Egna tees behålls.
+  function applyRatings() {
+    var lib = effLib(), changed = 0;
+    state.courses.forEach(function (c) {
+      if (c.demo) return;
+      var combo = RT.comboForCourse(lib, c);
+      if (!combo) return;
+      var built = RT.buildTees(lib, combo, c.tees);
+      var builtNames = built.map(function (x) { return RT.fold(x.name); }), builtColors = built.map(function (x) { return RT.fold(x.color); });
+      // Egna tees ersätts av den officiella teen med samma namn eller färg (t.ex. egen "Gul" → officiell "56 Gul").
+      var keep = c.tees.filter(function (x) { var f = RT.fold(x.name); return !x.official && builtNames.indexOf(f) < 0 && builtColors.indexOf(f) < 0 && !(x.unrated && (x.cr === null || x.cr === undefined)); });
+      var next = built.concat(keep);
+      if (JSON.stringify(next) !== JSON.stringify(c.tees)) { c.tees = next; c.ratingCombo = combo.key; changed++; }
+    });
+    if (changed) save();
+    return changed;
+  }
+  // Ögonblicksbild av tee för en rond: rätt värdering för kön och rondtyp (aldrig påhittade värden).
+  function resolvedTee(te, gender, mode) {
+    mode = mode || '18';
+    var rating = gender ? RT.ratingFor(te, gender, mode) : (te.ratings ? null : RT.ratingFor(te, null, mode));
+    var snap = mode === '18' ? JSON.parse(JSON.stringify(te)) : RT.nineTee(te, mode, rating);
+    delete snap.ratings;
+    snap.cr = rating ? rating.cr : null; snap.slope = rating ? rating.slope : null; snap.unrated = !rating;
+    snap.ratingInfo = rating ? { official: rating.official, source: rating.source || null, verifiedAt: rating.verifiedAt || null, gender: gender, holes: mode, par: rating.par } : { missing: true, gender: gender, holes: mode };
+    return snap;
+  }
+  function teeLength(te, mode) {
+    var hs = te.holes || [], sl = mode === 'front9' ? hs.slice(0, 9) : mode === 'back9' ? hs.slice(9, 18) : hs;
+    var r = te.ratings && (te.ratings.men[mode || '18'] || te.ratings.women[mode || '18']);
+    if (r && r.length) return r.length;
+    if ((!mode || mode === '18') && te.length) return te.length;
+    var sum = sl.reduce(function (a, h) { return a + (h.length || 0); }, 0);
+    return sl.every(function (h) { return h.length; }) && sum ? sum : null;
+  }
+  function genderName(g) { return t(g === 'women' ? 'genderWomen' : 'genderMen'); }
+  function ratingLine(te, gender, mode) {
+    var r = gender ? RT.ratingFor(te, gender, mode) : null, len = teeLength(te, mode);
+    var parts = [];
+    if (len) parts.push(len + ' m');
+    if (r) parts.push('CR ' + dec(r.cr) + ' · Slope ' + r.slope);
+    else if (!gender && te.ratings) parts.push(t('chooseGenderShort'));
+    else parts.push(fmt(t('noRatingFor'), { g: gender ? genderName(gender).toLowerCase() : '', h: t('hm_' + (mode || '18')).toLowerCase() }));
+    return parts.join(' · ');
+  }
+  function ratingBadge(te, gender, mode) {
+    var r = gender ? RT.ratingFor(te, gender, mode) : null;
+    if (!r) return '<em class="tag">' + esc(t('noRatingTag')) + '</em>';
+    return r.official ? '<em class="tag ok" title="' + esc((r.source || '') + ' ' + (r.verifiedAt || '')) + '">' + esc(t('officialTag')) + '</em>' : '<em class="tag">' + esc(t('ownValueTag')) + '</em>';
+  }
+  function holeNo(r, i) { return i + 1 + (r && r.holeOffset ? r.holeOffset : 0); }
+
+  // ---------- Score differential, PCC ----------
+  function diffBlock(r, s) {
+    if (s.unrated || (r.tee && r.tee.unrated)) return '<p class="note">' + esc(t('noDiffUnrated')) + '</p>';
+    if (s.differential === null) return '';
+    var h = '<div class="diffbox"><p class="diff">' + esc(s.pccKnown ? t('diffWithPcc') : t('diffPrelim')) + ': <b>' + dec(s.differential) + '</b></p>';
+    if (s.nine) h += '<p class="note">' + esc(fmt(t('diffNineExpl'), { d9: dec(s.differential9), e: dec(C.expected9(r.hi), 2) })) + '</p>';
+    if (r.status === 'done' && !r.shared) {
+      h += '<label class="field inline"><span>' + esc(t('pccLabel')) + '</span><select data-field="pcc:' + r.id + '"><option value="">' + esc(t('pccUnknown')) + '</option>' +
+        [-1, 0, 1, 2, 3].map(function (v) { return '<option value="' + v + '"' + (r.pcc === v ? ' selected' : '') + '>' + (v > 0 ? '+' : '') + v + '</option>'; }).join('') + '</select></label>';
+    }
+    var ri = r.tee && r.tee.ratingInfo;
+    if (ri && !ri.missing) h += '<p class="note">' + esc(ri.official ? fmt(t('ratingSrcOfficial'), { g: ri.gender ? genderName(ri.gender) : '', s: ri.source || '', d: ri.verifiedAt || '' }) : t('ratingSrcOwn')) + '</p>';
+    return h + '<p class="note">' + esc(t('diffNotOfficial')) + '</p></div>';
+  }
+
+  // ---------- Administration ----------
+  function sha(text) {
+    if (window.crypto && crypto.subtle && window.TextEncoder) {
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode('banboken-admin:' + text)).then(function (buf) {
+        return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+      });
+    }
+    return Promise.resolve(SY.hash('banboken-admin:' + text));
+  }
+  var adminUi = { unlocked: false, pin: '', pin2: '', err: null, sec: 'report', combo: null, form: null, importText: '', importRes: null, shared: { status: null, isAdmin: null } };
+  var ISSUE_ORDER = ['notLinked', 'noTees', 'noRating', 'invalidRating', 'parMismatch', 'badSi', 'holesMissing', 'duplicateTee', 'duplicateCourse', 'multipleLoops', 'unverified'];
+  function viewAdmin() {
+    var h = header(t('adminTitle'), 'admin-close') + '<main class="page form">';
+    if (!state.admin || !state.admin.pinHash) {
+      h += '<p>' + esc(t('adminCreatePin')) + '</p>' +
+        '<label class="field"><span>' + esc(t('pinNew')) + '</span><input type="password" inputmode="numeric" autocomplete="new-password" data-field="adm.pin" value=""></label>' +
+        '<label class="field"><span>' + esc(t('pinRepeat')) + '</span><input type="password" inputmode="numeric" autocomplete="new-password" data-field="adm.pin2" value=""></label>' +
+        (adminUi.err ? '<p class="fail">' + esc(adminUi.err) + '</p>' : '') + '<button class="btn gold" data-act="adm-setpin">' + esc(t('save')) + '</button>' +
+        '<p class="note">' + esc(t('adminPinNote')) + '</p>';
+      return h + '</main>';
+    }
+    if (!adminUi.unlocked) {
+      h += '<label class="field"><span>' + esc(t('pinEnter')) + '</span><input type="password" inputmode="numeric" autocomplete="current-password" data-field="adm.pin" value=""></label>' +
+        (adminUi.err ? '<p class="fail">' + esc(adminUi.err) + '</p>' : '') + '<button class="btn gold" data-act="adm-unlock">' + esc(t('unlock')) + '</button>';
+      return h + '</main>';
+    }
+    var secs = ['report', 'tables', 'edit', 'import', 'link', 'shared'];
+    h += '<div class="chips adm-tabs">' + secs.map(function (s) { return '<button class="chip' + (adminUi.sec === s ? ' on' : '') + '" data-act="adm-sec:' + s + '">' + esc(t('adm_' + s)) + '</button>'; }).join('') + '</div>';
+    var lib = effLib();
+    if (adminUi.sec === 'report') {
+      var rep = RT.audit(state.courses, lib), bad = rep.filter(function (x) { return !x.ok; });
+      h += '<p class="meta">' + esc(fmt(t('auditSummary'), { n: rep.length, ok: rep.length - bad.length, bad: bad.length, rows: lib.length })) + '</p>';
+      if (!rep.length) h += '<p class="muted">' + esc(t('auditNoCourses')) + '</p>';
+      rep.forEach(function (c) {
+        h += '<section class="block"><h3>' + esc(c.name) + ' ' + (c.ok ? '<em class="tag ok">OK</em>' : '') + '</h3>';
+        var issues = c.issues.slice().sort(function (a, b) { return ISSUE_ORDER.indexOf(a.code) - ISSUE_ORDER.indexOf(b.code); });
+        if (issues.length) h += '<ul class="clist">' + issues.map(function (x) { return '<li>' + esc(fmt(t('iss_' + x.code), { tee: x.tee || '', g: x.gender ? genderName(x.gender).toLowerCase() : '', a: x.a || '', b: x.b || '' })) + '</li>'; }).join('') + '</ul>';
+        if (issues.some(function (x) { return x.code === 'notLinked'; })) h += '<button class="chip" data-act="adm-sec:link">' + esc(t('adm_link')) + '</button>';
+        h += '</section>';
+      });
+    } else if (adminUi.sec === 'tables') {
+      var cs = RT.combos(lib);
+      if (!cs.length) h += '<p class="muted">' + esc(t('noTables')) + '</p>';
+      cs.forEach(function (c) {
+        var open = adminUi.combo === c.key, rows = lib.filter(function (r) { return RT.comboKey(r) === c.key; });
+        h += '<section class="block"><button class="row" data-act="adm-combo:' + esc(c.key) + '"><span class="row-main"><strong>' + esc(c.club + ' – ' + c.course) + '</strong><small>' + esc(t('combo') + ': ' + c.combo + ' · ' + Object.keys(c.tees).length + ' tee · ' + rows.length + ' ' + t('ratingsWord')) + '</small></span><span class="chev">' + (open ? '⌄' : '›') + '</span></button>';
+        if (open) {
+          h += '<div class="sc-wrap"><table class="lb adm"><thead><tr><th>Tee</th><th>' + esc(t('genderShort')) + '</th><th>' + esc(t('holesShortH')) + '</th><th>CR</th><th>Slope</th><th>Par</th><th>' + esc(t('clubLen')) + '</th><th>' + esc(t('sourceShort')) + '</th><th></th></tr></thead><tbody>' +
+            rows.sort(function (a, b) { return (b.length || 0) - (a.length || 0) || a.tee.localeCompare(b.tee, 'sv') || a.gender.localeCompare(b.gender) || a.holes.localeCompare(b.holes); }).map(function (r) {
+              var own = (state.ratingLib || []).some(function (x) { return RT.rowKey(x) === RT.rowKey(r); });
+              return '<tr><td><b>' + esc(r.tee) + '</b>' + (r.color ? ' <small>' + esc(r.color) + '</small>' : '') + '</td><td>' + esc(r.gender === 'women' ? 'D' : 'H') + '</td><td>' + esc(t('hm_' + r.holes)) + '</td><td>' + dec(r.cr) + '</td><td>' + r.slope + '</td><td>' + r.par + '</td><td>' + (r.length || '–') + '</td>' +
+                '<td><small>' + esc(r.source) + '<br>' + esc(r.verifiedAt) + (own ? '' : ' · ' + esc(t('sharedTag'))) + '</small></td><td><button class="chip" data-act="adm-editrow:' + esc(RT.rowKey(r)) + '">' + esc(t('editShort')) + '</button>' +
+                (own ? '<button class="chip" data-act="adm-delrow:' + esc(RT.rowKey(r)) + '" aria-label="' + esc(t('delete')) + '">✕</button>' : '') + '</td></tr>';
+            }).join('') + '</tbody></table></div>';
+        }
+        h += '</section>';
+      });
+    } else if (adminUi.sec === 'edit') {
+      var f = adminUi.form || (adminUi.form = { club: '', course: '', combo: '18', tee: '', color: '', length: '', par: '', gender: 'men', holes: '18', cr: '', slope: '', source: '', verifiedAt: new Date().toISOString().slice(0, 10) });
+      h += '<p class="note">' + esc(t('editHelp')) + '</p>';
+      [['club', 'club'], ['course', 'courseName'], ['combo', 'combo'], ['tee', 'teeNameShort'], ['color', 'teeColor'], ['length', 'clubLen'], ['par', 'par'], ['cr', 'cr'], ['slope', 'slope'], ['source', 'sourceLong'], ['verifiedAt', 'verifiedDate']].forEach(function (x) {
+        h += '<label class="field"><span>' + esc(t(x[1])) + '</span><input data-field="admf.' + x[0] + '" value="' + esc(f[x[0]]) + '"' + (['length', 'par', 'cr', 'slope'].indexOf(x[0]) >= 0 ? ' inputmode="decimal"' : '') + (x[0] === 'verifiedAt' ? ' type="date"' : '') + '></label>';
+      });
+      h += '<div class="seg small">' + ['men', 'women'].map(function (g) { return '<button class="' + (f.gender === g ? 'on' : '') + '" data-act="admf-g:' + g + '">' + esc(genderName(g)) + '</button>'; }).join('') + '</div>';
+      h += '<div class="seg small">' + ['18', 'front9', 'back9'].map(function (m) { return '<button class="' + (f.holes === m ? 'on' : '') + '" data-act="admf-h:' + m + '">' + esc(t('hm_' + m)) + '</button>'; }).join('') + '</div>';
+      if (adminUi.err) h += '<p class="fail">' + esc(adminUi.err) + '</p>';
+      h += '<button class="btn gold" data-act="adm-saverow">' + esc(t('save')) + '</button>';
+    } else if (adminUi.sec === 'import') {
+      h += '<p class="note">' + esc(t('importHelp')) + '</p><pre class="tmpl">' + esc(t('csvTemplate')) + '</pre>' +
+        '<label class="btn ghost file">' + esc(t('chooseFile')) + '<input type="file" accept=".csv,.json,text/csv,application/json" data-field="adm.file"></label>' +
+        '<label class="field"><span>' + esc(t('orPaste')) + '</span><textarea data-field="adm.text" rows="6">' + esc(adminUi.importText) + '</textarea></label>' +
+        '<button class="btn gold" data-act="adm-import">' + esc(t('importBtn')) + '</button>';
+      var ir = adminUi.importRes;
+      if (ir) {
+        h += '<div class="block"><p><b>' + esc(fmt(t('importResult'), { a: ir.added, u: ir.updated, s: ir.unchanged, e: ir.errors.length, c: ir.courses })) + '</b></p>';
+        if (ir.missingCols && ir.missingCols.length) h += '<p class="fail">' + esc(t('missingCols') + ': ' + ir.missingCols.join(', ')) + '</p>';
+        if (ir.errors.length) h += '<ul class="clist">' + ir.errors.slice(0, 30).map(function (x) { return '<li>' + esc(fmt(t('importErrLine'), { l: x.line, tee: x.tee || '?', f: x.errors.map(function (k) { return t('fld_' + k); }).join(', ') })) + '</li>'; }).join('') + '</ul>';
+        h += '</div>';
+      }
+      h += '<button class="btn ghost" data-act="adm-export">' + esc(t('exportCsv')) + '</button>';
+    } else if (adminUi.sec === 'link') {
+      var all = RT.combos(lib);
+      h += '<p class="note">' + esc(t('linkHelp')) + '</p>';
+      state.courses.filter(function (c) { return !c.demo; }).forEach(function (c) {
+        var cur = RT.comboForCourse(lib, c), sug = RT.suggestCombos(lib, c);
+        var opts = sug.concat(all.filter(function (x) { return sug.indexOf(x) < 0; }));
+        h += '<label class="field"><span>' + esc(c.name) + (cur ? ' ✓' : '') + '</span><select data-field="adm.link:' + c.id + '"><option value="">' + esc(t('notLinkedOpt')) + '</option>' +
+          opts.map(function (x) { return '<option value="' + esc(x.key) + '"' + (cur && cur.key === x.key ? ' selected' : '') + '>' + esc(x.club + ' – ' + x.course + ' (' + x.combo + ')') + '</option>'; }).join('') + '</select></label>';
+      });
+    } else if (adminUi.sec === 'shared') {
+      var sh = adminUi.shared;
+      h += '<p class="note">' + esc(t('sharedHelp')) + '</p><p class="meta">' + esc(fmt(t('sharedCount'), { n: sharedRatings.rows.length, d: sharedRatings.at ? fmtDate(sharedRatings.at) : '–' })) + '</p>';
+      if (!cloudReady()) h += '<p class="warn">' + esc(t('liveNeedCloud')) + '</p>';
+      else {
+        h += '<button class="btn ghost" data-act="adm-pull">' + esc(t('sharedPull')) + '</button>';
+        if (signedIn()) h += '<button class="btn gold" data-act="adm-push"' + (sh.isAdmin === false ? ' disabled' : '') + '>' + esc(t('sharedPush')) + '</button>' + (sh.isAdmin === false ? '<p class="note">' + esc(t('notAdmin')) + '</p>' : '');
+        else h += '<p class="note">' + esc(t('liveNeedSignIn')) + '</p>';
+      }
+      if (sh.status) h += '<p class="' + (sh.err ? 'fail' : 'note') + '">' + esc(sh.status) + '</p>';
+    }
+    h += '<button class="link" data-act="adm-lock">' + esc(t('lockAdmin')) + '</button>';
+    return h + '</main>';
+  }
+  function runImport(text) {
+    var res;
+    try { res = RT.parseImport(text, new Date().toISOString().slice(0, 10)); }
+    catch (e) { adminUi.importRes = { added: 0, updated: 0, unchanged: 0, courses: 0, errors: [{ line: 0, errors: ['format'] }] }; return; }
+    var m = RT.mergeLibrary(state.ratingLib || [], res.rows, new Date().toISOString());
+    state.ratingLib = m.lib; save();
+    var c = applyRatings();
+    adminUi.importRes = { added: m.added, updated: m.updated, unchanged: m.unchanged, errors: res.errors, missingCols: res.missingCols, courses: c };
+  }
+  function libCsv() {
+    var head = 'Klubb;Bana;Slinga;OSM;Tee;Färg;Längd;Par;Kön;Hål;CR;Slope;Källa;Verifierad';
+    function q(v) { v = v === null || v === undefined ? '' : String(v); return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+    return head + '\n' + effLib().map(function (r) {
+      return [r.club, r.course, r.combo, r.osmRef, r.tee, r.color, r.length, r.par, r.gender === 'women' ? 'Dam' : 'Herr', r.holes === '18' ? '18' : r.holes === 'front9' ? '1-9' : '10-18', String(r.cr).replace('.', ','), r.slope, r.source, r.verifiedAt].map(q).join(';');
+    }).join('\n');
+  }
+  // Delad officiell slopetabell i Supabase (alla läser, bara administratörer skriver).
+  function pullShared(quiet) {
+    if (!cloudReady()) return Promise.resolve();
+    return httpJson(cloud.url + '/rest/v1/tee_ratings?select=data,updated_at&order=updated_at.asc&limit=5000', { headers: { apikey: cloud.key, Authorization: 'Bearer ' + (signedIn() && cloud.session.access ? cloud.session.access : cloud.key) } }, 30000)
+      .then(function (rows) {
+        var ok = [];
+        (rows || []).forEach(function (x) { var n = RT.normalizeRow(x.data || {}, null); if (!n.errors.length) ok.push(n.row); });
+        sharedRatings = { rows: ok, at: new Date().toISOString() };
+        try { localStorage.setItem(SHARED_KEY, JSON.stringify(sharedRatings)); } catch (e) {}
+        applyRatings();
+        if (!quiet) { adminUi.shared.status = fmt(t('sharedPulled'), { n: ok.length }); adminUi.shared.err = false; render(); }
+      }).catch(function (e) { if (!quiet) { adminUi.shared.status = e.message; adminUi.shared.err = true; render(); } });
+  }
+  function checkAdmin() {
+    if (!signedIn()) return;
+    ensureToken().then(function () { return httpJson(cloud.url + '/rest/v1/rpc/is_banboken_admin', { method: 'POST', headers: { apikey: cloud.key, Authorization: 'Bearer ' + cloud.session.access, 'Content-Type': 'application/json' }, body: '{}' }, 15000); })
+      .then(function (v) { adminUi.shared.isAdmin = v === true; render(); }).catch(function () {});
+  }
+  function pushShared() {
+    var rows = (state.ratingLib || []).map(function (r) { return { rk: RT.rowKey(r), data: r }; });
+    adminUi.shared.status = t('syncing'); render();
+    var chunks = []; for (var i = 0; i < rows.length; i += 100) chunks.push(rows.slice(i, i + 100));
+    chunks.reduce(function (p, ch) {
+      return p.then(function () { return sbFetch('/rest/v1/tee_ratings?on_conflict=rk', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(ch) }, true); });
+    }, Promise.resolve()).then(function () { adminUi.shared.status = fmt(t('sharedPushed'), { n: rows.length }); adminUi.shared.err = false; return pullShared(true); })
+      .catch(function (e) { adminUi.shared.status = e.status === 401 || e.status === 403 ? t('notAdmin') : e.message; adminUi.shared.err = true; })
+      .then(function () { render(); });
+  }
+
+  function shareFile(name, text, type) {
+    var blob = new Blob([text], { type: type });
+    try { var f = new File([blob], name, { type: type }); if (navigator.canShare && navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: name }).catch(function () {}); return; } } catch (e) {}
+    var aEl = document.createElement('a'); aEl.href = URL.createObjectURL(blob); aEl.download = name; document.body.appendChild(aEl); aEl.click(); aEl.remove();
   }
 
   var state = load();
@@ -4593,23 +5249,34 @@ Object.assign(window.I18N.en, {
     var c = s.courseId && courseById(s.courseId);
     if (c) {
       if (c.demo) h += '<p class="warn">' + esc(t('demoWarning')) + '</p>';
+      var gender = playerGender(), mode = s.holesMode || '18';
+      if (!gender) h += '<section class="block"><h3>' + esc(t('ratingGender')) + '</h3><p class="note">' + esc(t('genderWhy')) + '</p><div class="seg">' + ['men', 'women'].map(function (g) { return '<button data-act="p-gender:' + g + '">' + esc(genderName(g)) + '</button>'; }).join('') + '</div></section>';
       h += '<section class="block"><h3>' + esc(t('chooseTee')) + '</h3><div class="choices">';
       c.tees.forEach(function (te) {
-        h += '<button class="choice' + (s.teeId === te.id ? ' on' : '') + '" data-act="pick-tee:' + te.id + '"><strong>' + esc(te.name) + '</strong><small>' + (C.teeRated(te) ? 'CR ' + dec(te.cr) + ' · Slope ' + te.slope : esc(t('noRatingTag'))) + ' · Par ' + C.sumPar(te.holes) + '</small></button>';
+        h += '<button class="choice' + (s.teeId === te.id ? ' on' : '') + '" data-act="pick-tee:' + te.id + '"><strong>' + esc(te.name) + (te.color ? ' <small>' + esc(te.color) + '</small>' : '') + '</strong><small>' + esc(ratingLine(te, gender, mode)) + ' · Par ' + C.sumPar(mode === '18' ? te.holes : mode === 'front9' ? te.holes.slice(0, 9) : te.holes.slice(9, 18)) + '</small>' + ratingBadge(te, gender, mode) + '</button>';
       });
       h += '</div></section>';
       var te = s.teeId && c.tees.filter(function (x) { return x.id === s.teeId; })[0];
       if (te) {
         var allowance = s.allowance || state.profile.allowance;
-        var par = C.sumPar(te.holes), hi = state.profile.hi;
-        var rated = C.teeRated(te), exact = rated ? C.courseHandicapExact(hi, te.slope, te.cr, par) : 0, ch = rated ? C.courseHandicap(hi, te.slope, te.cr, par) : 0, ph = C.playingHandicap(ch, allowance);
+        var snap = resolvedTee(te, gender, mode), hi = state.profile.hi, par = C.sumPar(snap.holes);
+        var rated = !snap.unrated, nineM = mode !== '18';
+        var exact = !rated ? 0 : nineM ? (hi / 2) * (snap.slope / 113) + (snap.cr - par) : C.courseHandicapExact(hi, snap.slope, snap.cr, par);
+        var ch = !rated ? 0 : nineM ? C.courseHandicap9(hi, snap.slope, snap.cr, par) : C.courseHandicap(hi, snap.slope, snap.cr, par), ph = C.playingHandicap(ch, allowance);
+        if (te.holes.length === 18 && !(s.extra || []).length) h += '<section class="block"><h3>' + esc(t('holesToPlay')) + '</h3><div class="seg">' + ['18', 'front9', 'back9'].map(function (m) { return seg('holesMode', m, t('hm_' + m), mode); }).join('') + '</div></section>';
+        h += '<section class="block"><h3>' + esc(t('roundSummary')) + '</h3><dl class="kv">' +
+          kv(t('courseName'), c.name) + kv(t('tee'), te.name + (te.color ? ' (' + te.color + ')' : '')) + kv(t('clubLen'), teeLength(te, mode) ? teeLength(te, mode) + ' m' : '–') +
+          kv(t('ratingFor'), gender ? genderName(gender) + ' · ' + t('hm_' + mode) : t('chooseGenderShort')) +
+          kv('Course Rating', rated ? dec(snap.cr) : '–') + kv('Slope Rating', rated ? String(snap.slope) : '–') + kv('Par', String(par)) +
+          kv(t('handicapIndex'), C.formatHandicap(hi)) + kv(t('courseHcp'), rated ? String(ch) : '–') + kv(t('playingHcp'), rated ? String(ph) : '–') + '</dl>' +
+          (rated && snap.ratingInfo ? '<p class="note">' + esc(snap.ratingInfo.official ? fmt(t('ratingSrcOfficial'), { g: genderName(gender), s: snap.ratingInfo.source || '', d: snap.ratingInfo.verifiedAt || '' }) : t('ratingSrcOwn')) + '</p>' : '') + '</section>';
         h += '<section class="block"><h3>' + esc(t('format')) + '</h3><div class="seg">' +
           seg('format', 'stroke', t('strokePlay'), s.format || 'stableford') + seg('format', 'stableford', t('stableford'), s.format || 'stableford') + '</div>' +
           '<h3>' + esc(t('allowance')) + '</h3><div class="seg">' + [100, 95, 90, 85].map(function (a) { return seg('allowance', a, a + ' %', allowance); }).join('') + '</div>' +
           '<p class="note">' + esc(t('allowanceHelp')) + '</p></section>';
-        if (!C.teeRated(te)) h += '<p class="warn">' + esc(t('unratedRound')) + '</p>'; else
+        if (!rated) h += '<div class="warn">' + esc(fmt(t('unratedFor'), { tee: te.name, g: gender ? genderName(gender).toLowerCase() : '', h: t('hm_' + mode).toLowerCase() })) + '<br><small>' + esc(t('unratedWhat')) + '</small></div>'; else
         h += '<section class="block hcpcalc"><div class="big-pair"><div><span>' + ph + '</span><small>' + esc(t('playingHcp')) + '</small></div><div><span>' + ch + '</span><small>' + esc(t('courseHcp')) + '</small></div></div>' +
-          '<p class="formula">' + esc(C.formatHandicap(hi)) + ' × ' + te.slope + '/113 + (' + dec(te.cr) + ' − ' + par + ') = ' + dec(exact, 2) + ' → ' + ch +
+          '<p class="formula">' + (nineM ? '(' + esc(C.formatHandicap(hi)) + ' ÷ 2)' : esc(C.formatHandicap(hi))) + ' × ' + snap.slope + '/113 + (' + dec(snap.cr) + ' − ' + par + ') = ' + dec(exact, 2) + ' → ' + ch +
           (allowance !== 100 ? '<br>' + ch + ' × ' + allowance + ' % = ' + dec(ch * allowance / 100, 2) + ' → ' + ph : '') + '</p></section>';
         h += setupGroupHtml(c, te);
         var serr = setupErrors(c, te);
@@ -4618,6 +5285,7 @@ Object.assign(window.I18N.en, {
     }
     return h + '</main>';
   }
+  function kv(k, v) { return '<div><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>'; }
   function seg(field, val, label, cur) {
     return '<button class="' + (String(cur) === String(val) ? 'on' : '') + '" data-act="set-' + field + ':' + val + '">' + esc(label) + '</button>';
   }
@@ -4652,7 +5320,7 @@ Object.assign(window.I18N.en, {
 
   function holeView(r, s) {
     var i = r.current, hole = r.tee.holes[i], d = r.holes[i], rec = s.allocation[i];
-    var h = '<section class="hole-head"><div class="hole-no"><small>' + esc(t('hole')) + '</small><span>' + (i + 1) + '</span></div>' +
+    var h = '<section class="hole-head"><div class="hole-no"><small>' + esc(t('hole')) + '</small><span>' + holeNo(r, i) + '</span></div>' +
       '<dl><div><dt>' + esc(t('par')) + '</dt><dd>' + hole.par + '</dd></div><div><dt>' + esc(t('si')) + '</dt><dd>' + hole.si + '</dd></div>' +
       '<div><dt>' + esc(t('length')) + '</dt><dd>' + (hole.length ? hole.length + ' m' : '–') + '</dd></div>' +
       '<div><dt>' + esc(t('received')) + '</dt><dd>' + (rec > 0 ? '+' + rec : rec) + '</dd></div></dl></section>';
@@ -4706,7 +5374,7 @@ Object.assign(window.I18N.en, {
         : '<button class="btn gold" data-act="finish">' + esc(t('finishRound')) + '</button>') + '</div>';
     h += '<div class="dots" aria-hidden="true">' + r.tee.holes.map(function (_, k) {
       var dd = r.holes[k]; var has = typeof dd.strokes === 'number' || dd.pickedUp;
-      return '<button tabindex="-1" class="' + (k === i ? 'cur ' : '') + (has ? 'done' : '') + '" data-act="go:' + k + '">' + (k + 1) + '</button>';
+      return '<button tabindex="-1" class="' + (k === i ? 'cur ' : '') + (has ? 'done' : '') + '" data-act="go:' + k + '">' + holeNo(r, k) + '</button>';
     }).join('') + '</div>';
     h += '<button class="link danger" data-act="discard">' + esc(t('discardRound')) + '</button>';
     return h;
@@ -4731,7 +5399,7 @@ Object.assign(window.I18N.en, {
       var rows = { no: '', par: '', si: '', rec: '', sc: '', pts: '', putt: '' }, parSum = 0, scSum = 0, ptSum = 0, puSum = 0;
       for (var k = from; k < to; k++) {
         var d = r.holes[k], rec = s.allocation[k];
-        rows.no += '<th' + (live ? ' data-act="go-hole:' + k + '"' : '') + '>' + (k + 1) + '</th>';
+        rows.no += '<th' + (live ? ' data-act="go-hole:' + k + '"' : '') + '>' + holeNo(r, k) + '</th>';
         rows.par += '<td>' + holes[k].par + '</td>'; parSum += holes[k].par;
         rows.si += '<td>' + holes[k].si + '</td>';
         rows.rec += '<td class="rec">' + (rec > 0 ? '<i>' + new Array(rec + 1).join('•') + '</i>' : rec < 0 ? '<i>−</i>' : '') + '</td>';
@@ -4750,12 +5418,12 @@ Object.assign(window.I18N.en, {
         '<tr><th class="lbl">' + esc(t('points')) + '</th>' + rows.pts + '<td><b>' + ptSum + '</b></td></tr>' +
         '</tbody></table></div>';
     }
-    var h = half(0, 9, t('out')) + half(9, 18, t('in'));
+    var h = holes.length === 9 ? half(0, 9, t('total')) : half(0, 9, t('out')) + half(9, 18, t('in'));
     h += '<p class="note">' + esc(t('receivedLegend')) + '</p>';
     h += '<dl class="totals"><div><dt>' + esc(t('gross')) + '</dt><dd>' + s.gross + '</dd></div><div><dt>' + esc(t('net')) + '</dt><dd>' + s.net + '</dd></div>' +
       '<div><dt>' + esc(t('points')) + '</dt><dd>' + s.points + '</dd></div><div><dt>' + esc(t('putts')) + '</dt><dd>' + s.putts + '</dd></div>' +
       '<div><dt>' + esc(t('firPct')) + '</dt><dd>' + s.firHit + '/' + s.firTot + '</dd></div><div><dt>' + esc(t('girPct')) + '</dt><dd>' + s.girHit + '/' + s.girTot + '</dd></div></dl>';
-    if (s.differential !== null) h += '<p class="diff">' + esc(t('differential')) + ': <b>' + dec(s.differential) + '</b></p><p class="note">' + esc(t('differentialHelp')) + '</p>';
+    h += diffBlock(r, s);
     if (live) h += '<button class="btn gold big" data-act="finish">' + esc(t('finishRound')) + '</button>';
     return h;
   }
@@ -4805,8 +5473,8 @@ Object.assign(window.I18N.en, {
     c.tees.forEach(function (te, ti) {
       h += '<fieldset class="tee"><legend>' + esc(te.name || t('tee') + ' ' + (ti + 1)) + '</legend>' +
         field(t('teeName'), 't' + ti + '.name', te.name) +
-        '<div class="two">' + field(t('cr'), 't' + ti + '.cr', te.cr, 'decimal') + field(t('slope'), 't' + ti + '.slope', te.slope, 'numeric') + '</div>';
-      h += '<label class="check"><input type="checkbox" data-field="t' + ti + '.unrated"' + (te.unrated ? ' checked' : '') + '> <span>' + esc(t('unratedCheck')) + '<small class="note block-note">' + esc(t('unratedHelp')) + '</small></span></label>';
+        (te.official ? officialTable(te) : '<div class="two">' + field(t('cr'), 't' + ti + '.cr', te.cr, 'decimal') + field(t('slope'), 't' + ti + '.slope', te.slope, 'numeric') + '</div>');
+      if (!te.official) h += '<label class="check"><input type="checkbox" data-field="t' + ti + '.unrated"' + (te.unrated ? ' checked' : '') + '> <span>' + esc(t('unratedCheck')) + '<small class="note block-note">' + esc(t('unratedHelp')) + '</small></span></label>';
       if (ti > 0) h += '<button class="link" data-act="copy-tee:' + ti + '">' + esc(t('copyFrom')) + ' ' + esc(c.tees[0].name || t('tee') + ' 1') + '</button>';
       h += '<div class="sc-wrap"><table class="holes-edit"><thead><tr><th>' + esc(t('hole')) + '</th><th>' + esc(t('par')) + '</th><th>' + esc(t('si')) + '</th><th>' + esc(t('length')) + ' (m)</th></tr></thead><tbody>';
       te.holes.forEach(function (ho, hi) {
@@ -4822,6 +5490,13 @@ Object.assign(window.I18N.en, {
     h += '<div class="holenav"><button class="btn ghost" data-act="back-courses">' + esc(t('cancel')) + '</button><button class="btn gold" data-act="save-course">' + esc(t('save')) + '</button></div>';
     if (!c.isNew) h += '<button class="link danger" data-act="delete-course">' + esc(t('delete')) + '</button>';
     return h + '</main>';
+  }
+  function officialTable(te) {
+    var rows = [];
+    ['men', 'women'].forEach(function (g) { ['18', 'front9', 'back9'].forEach(function (m) { var r = te.ratings && te.ratings[g] && te.ratings[g][m]; if (r) rows.push('<tr><td>' + esc(genderName(g)) + '</td><td>' + esc(t('hm_' + m)) + '</td><td>' + dec(r.cr) + '</td><td>' + r.slope + '</td><td>' + r.par + '</td></tr>'); }); });
+    return '<div class="official"><p><em class="tag ok">' + esc(t('officialTag')) + '</em> ' + esc(te.source || '') + ' · ' + esc(t('verifiedDate')) + ' ' + esc(te.verifiedAt || '') + '</p>' +
+      '<div class="sc-wrap"><table class="lb"><thead><tr><th>' + esc(t('genderShort')) + '</th><th>' + esc(t('holesShortH')) + '</th><th>CR</th><th>Slope</th><th>Par</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>' +
+      '<p class="note">' + esc(t('officialLocked')) + '</p></div>';
   }
   function field(label, key, val, mode) {
     return '<label class="field"><span>' + esc(label) + '</span><input data-field="' + key + '" value="' + esc(val === null || val === undefined ? '' : val) + '"' + (mode ? ' inputmode="' + mode + '"' : '') + '></label>';
@@ -4871,6 +5546,7 @@ Object.assign(window.I18N.en, {
     h += '<label class="field"><span>' + esc(t('handicapIndex')) + '</span><input data-field="p.hi" inputmode="decimal" value="' + esc(p.hi === null ? '' : C.formatHandicap(p.hi)) + '"></label>';
     h += '<p class="note">' + esc(view.hiError ? t('hiInvalid') : t('hiHelp')) + '</p>';
     h += field(t('homeClub'), 'p.homeClub', p.homeClub);
+    h += '<h3>' + esc(t('ratingGender')) + '</h3><div class="seg">' + ['men', 'women'].map(function (g) { return '<button class="' + (p.gender === g ? 'on' : '') + '" data-act="p-gender:' + g + '">' + esc(genderName(g)) + '</button>'; }).join('') + '</div><p class="note">' + esc(t('genderWhy')) + '</p>';
     h += '<h3>' + esc(t('defaultAllowance')) + '</h3><div class="seg">' + [100, 95].map(function (a) { return '<button class="' + (p.allowance === a ? 'on' : '') + '" data-act="p-allowance:' + a + '">' + a + ' %</button>'; }).join('') + '</div>';
     h += '<h3>' + esc(t('language')) + '</h3><div class="seg"><button class="' + (p.lang === 'sv' ? 'on' : '') + '" data-act="lang:sv">Svenska</button><button class="' + (p.lang === 'en' ? 'on' : '') + '" data-act="lang:en">English</button></div>';
     h += '<h3>' + esc(t('theme')) + '</h3><div class="seg">' + ['auto', 'light', 'dark'].map(function (x) {
@@ -4882,6 +5558,7 @@ Object.assign(window.I18N.en, {
     if (profileReady() && !activeRound()) h += '<button class="btn gold big" data-act="setup">' + esc(t('startRound')) + '</button>';
 
     h += cloudSection();
+    h += '<section class="block"><h3>' + esc(t('adminTitle')) + '</h3><p class="note">' + esc(t('adminIntro')) + '</p><button class="btn ghost" data-act="admin-open">' + esc(t('adminOpen')) + '</button></section>';
     h += bagSection();
     h += '<section class="block"><h3>' + esc(t('myCode')) + '</h3><p class="note">' + esc(t('myCodeHelp')) + '</p>' + (profileReady() ? '<p class="code">' + esc(myCode()) + '</p><button class="btn ghost" data-act="share-code">' + esc(t('shareCode')) + '</button>' : '<p class="muted">' + esc(t('needProfile')) + '</p>') + '</section>';
     if (state.friends.length) h += '<section class="block"><h3>' + esc(t('friends')) + '</h3>' + state.friends.map(function (f) { return '<div class="pl"><span class="pl-n"><b>' + esc(f.name) + '</b><small>' + esc(t('handicapIndex')) + ' ' + esc(C.formatHandicap(f.hi)) + '</small></span><button class="chip" data-act="fdel:' + f.id + '">' + esc(t('remove')) + '</button></div>'; }).join('') + '</section>';
@@ -4911,7 +5588,7 @@ Object.assign(window.I18N.en, {
     else if (view.tab === 'round') body = view.sub === 'setup' ? viewSetup() : viewRound();
     else if (view.tab === 'courses') body = view.sub === 'edit' ? viewCourseEdit() : viewCourses();
     else if (view.tab === 'stats') body = viewStats();
-    else body = view.sub === 'setup' ? viewSetup() : viewProfile();
+    else body = view.sub === 'setup' ? viewSetup() : view.sub === 'admin' ? viewAdmin() : viewProfile();
     var warn = storageOk ? '' : '<p class="warn tight">Lagringen är full eller blockerad – exportera dina data.</p>';
     appEl.className = view.tab === 'play' ? 'playmode' : '';
     appEl.innerHTML = body + warn + flash() + (view.tab === 'play' ? '' : nav2());
@@ -4956,11 +5633,15 @@ Object.assign(window.I18N.en, {
       case 'pick-tee': view.setup.teeId = v; break;
       case 'set-format': view.setup.format = v; break;
       case 'set-allowance': view.setup.allowance = +v; break;
+      case 'set-holesMode': view.setup.holesMode = v; break;
+      case 'p-gender': state.profile.gender = v; save(); break;
+      case 'xg': { var xgp = v.split(':'); view.setup.extra[+xgp[0]].gender = xgp[1]; break; }
       case 'begin': {
         var c = courseById(view.setup.courseId); var te = c.tees.filter(function (x) { return x.id === view.setup.teeId; })[0];
-        var holes = te.holes.map(function () { return {}; });
-        state.rounds.push({ id: uid(), status: 'active', date: new Date().toISOString(), courseId: c.id, courseName: c.name, demo: !!c.demo,
-          tee: JSON.parse(JSON.stringify(te)), hi: state.profile.hi, allowance: view.setup.allowance || 100, format: view.setup.format || 'stableford', holes: holes, current: 0 });
+        var hmode = view.setup.holesMode || '18', snapT = resolvedTee(te, playerGender(), hmode);
+        var holes = snapT.holes.map(function () { return {}; });
+        state.rounds.push({ id: uid(), status: 'active', date: new Date().toISOString(), courseId: c.id, courseName: c.name, demo: !!c.demo, holeOffset: snapT.offset || 0, nine: hmode === '18' ? null : hmode,
+          tee: snapT, hi: state.profile.hi, allowance: view.setup.allowance || 100, format: view.setup.format || 'stableford', holes: holes, current: 0 });
         if (setupErrors(c, te).length) { state.rounds.pop(); return; }
         beginGroup(state.rounds[state.rounds.length - 1], c, te);
         if (view.setup.training) state.ui.shotLog = true;
@@ -5064,7 +5745,7 @@ Object.assign(window.I18N.en, {
       case 'sl-club': { var sdc = shotDraft(r); sdc.club = sdc.club === v ? null : v; break; }
       case 'sl-pen': { var sdp = shotDraft(r); sdp.pen = (sdp.pen || 0) >= 2 ? 0 : (sdp.pen || 0) + 1; break; }
       case 'sl-gps': {
-        var cg = courseById(r.courseId), hg = cg && cg.geo && cg.geo.holes[String(r.current + 1)];
+        var cg = courseById(r.courseId), hg = cg && cg.geo && cg.geo.holes[String(holeNo(r, r.current))];
         if (!gps.pos || !hg) return;
         var gdd = G.greenDistances([gps.pos.lat, gps.pos.lon], hg.green, greenCenter(hg));
         shotDraft(r).dist = String(Math.round(gdd.mid)); break;
@@ -5101,7 +5782,7 @@ Object.assign(window.I18N.en, {
         var u = cleanUrl(cloudForm.url), k = String(cloudForm.key || '').trim();
         if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(u)) { cloudForm.err = t('badUrl'); break; }
         if (!/^[A-Za-z0-9._-]{30,}$/.test(k)) { cloudForm.err = t('badKey'); break; }
-        cloud.url = u; cloud.key = k; cloud.synced = {}; cloud.lastPull = null; cloud.session = null; saveCloud(); cloudForm.err = null; break;
+        cloud.url = u; cloud.key = k; cloud.synced = {}; cloud.lastPull = null; cloud.session = null; saveCloud(); cloudForm.err = null; pullShared(true); break;
       }
       case 'cloud-forget': cloud = { url: '', key: '', session: null, synced: {}, lastPull: null }; saveCloud(); cloudForm = { email: '', code: '', sent: false }; break;
       case 'cloud-otp': {
@@ -5116,7 +5797,7 @@ Object.assign(window.I18N.en, {
       case 'cloud-verify': {
         cloudForm.busy = true; cloudForm.err = null; render();
         sbFetch('/auth/v1/verify', { method: 'POST', body: JSON.stringify({ type: 'email', email: String(cloudForm.email).trim(), token: String(cloudForm.code).trim() }) }, false)
-          .then(function (d) { setSession(d); cloud.synced = {}; cloud.lastPull = null; saveCloud(); cloudForm = { email: '', code: '', sent: false }; view.flash = t('signedInFlash'); return syncNow(true); }, function (e) { cloudForm.err = e.message; })
+          .then(function (d) { setSession(d); cloud.synced = {}; cloud.lastPull = null; saveCloud(); cloudForm = { email: '', code: '', sent: false }; view.flash = t('signedInFlash'); return syncNow(true).then(function () { return pullShared(true); }); }, function (e) { cloudForm.err = e.message; })
           .then(function () { cloudForm.busy = false; render(); });
         return;
       }
@@ -5164,6 +5845,32 @@ Object.assign(window.I18N.en, {
       case 'play-cancel': view.play.busy = false; clearInterval(view.play.ticker); break;
       case 'play-retry': near.key = null; if (view.play.pos) fetchNearby(view.play.pos); if (!dir) fetchDirectory(); return;
       case 'play-back-course': if (view.play) { view.tab = 'play'; view.sub = null; view.play.step = 'course'; } else { view.tab = 'home'; view.sub = null; } break;
+      case 'admin-open': view.tab = 'profile'; view.sub = 'admin'; adminUi.err = null; window.scrollTo(0, 0); break;
+      case 'admin-close': view.sub = null; break;
+      case 'adm-lock': adminUi.unlocked = false; adminUi.pin = ''; break;
+      case 'adm-setpin': {
+        if (!/^\d{4,8}$/.test(adminUi.pin)) { adminUi.err = t('pinRule'); break; }
+        if (adminUi.pin !== adminUi.pin2) { adminUi.err = t('pinMismatch'); break; }
+        sha(adminUi.pin).then(function (hh) { state.admin = { pinHash: hh }; save(); adminUi.unlocked = true; adminUi.err = null; adminUi.pin = adminUi.pin2 = ''; render(); });
+        return;
+      }
+      case 'adm-unlock': sha(adminUi.pin).then(function (hh) { adminUi.unlocked = hh === state.admin.pinHash; adminUi.err = adminUi.unlocked ? null : t('pinWrong'); adminUi.pin = ''; render(); }); return;
+      case 'adm-sec': adminUi.sec = v; adminUi.err = null; if (v === 'shared') checkAdmin(); window.scrollTo(0, 0); break;
+      case 'adm-combo': adminUi.combo = adminUi.combo === v ? null : v; break;
+      case 'adm-editrow': { var er = effLib().filter(function (x) { return RT.rowKey(x) === v; })[0]; if (er) { adminUi.form = {}; Object.keys(er).forEach(function (k2) { adminUi.form[k2] = er[k2] === null || er[k2] === undefined ? '' : String(er[k2]); }); adminUi.form.holeData = er.holeData; adminUi.sec = 'edit'; window.scrollTo(0, 0); } break; }
+      case 'adm-delrow': if (confirm(t('deleteRowConfirm'))) { state.ratingLib = (state.ratingLib || []).filter(function (x) { return RT.rowKey(x) !== v; }); save(); applyRatings(); } else return; break;
+      case 'admf-g': adminUi.form.gender = v; break;
+      case 'admf-h': adminUi.form.holes = v; break;
+      case 'adm-saverow': {
+        var nr = RT.normalizeRow(adminUi.form, new Date().toISOString().slice(0, 10));
+        if (nr.errors.length) { adminUi.err = t('fixErrors') + ' ' + nr.errors.map(function (k2) { return t('fld_' + k2); }).join(', '); break; }
+        state.ratingLib = RT.mergeLibrary(state.ratingLib || [], [nr.row], new Date().toISOString()).lib; save(); applyRatings();
+        adminUi.err = null; adminUi.form = null; adminUi.sec = 'tables'; adminUi.combo = RT.comboKey(nr.row); view.flash = t('saved'); break;
+      }
+      case 'adm-import': runImport(adminUi.importText); break;
+      case 'adm-export': shareFile('slopetabell-' + new Date().toISOString().slice(0, 10) + '.csv', libCsv(), 'text/csv'); return;
+      case 'adm-pull': pullShared(false); return;
+      case 'adm-push': pushShared(); return;
       case 'hole-mode': view.holeMode = view.holeMode === 'hole' ? 'card' : 'hole'; window.scrollTo(0, 0); break;
       case 'finish': {
         if (!r) break;
@@ -5205,7 +5912,7 @@ Object.assign(window.I18N.en, {
       case 'p-allowance': state.profile.allowance = +v; save(); break;
       case 'lang': state.profile.lang = v; save(); break;
       case 'theme': state.profile.theme = v; save(); break;
-      case 'run-tests': view.tests = window.runCoreTests(C, window.Geo, window.Games, window.Stats, window.Sync); break;
+      case 'run-tests': view.tests = window.runCoreTests(C, window.Geo, window.Games, window.Stats, window.Sync, window.Ratings); break;
       case 'export': {
         var blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
         var fname = 'banboken-' + new Date().toISOString().slice(0, 10) + '.json';
@@ -5245,6 +5952,21 @@ Object.assign(window.I18N.en, {
     if (key === 'live.code') { view.liveCode = val; return; }
     if (key === 'play.q') { if (view.play.q === val) return; view.play.q = val; var pr = document.getElementById('play-results'); if (pr) pr.innerHTML = playResults(); return; }
     if (key === 'dir.q') { if (view.dirQ === val) return; view.dirQ = val; var dl = document.getElementById('dir-list'); if (dl) dl.innerHTML = dirListHtml(); return; }
+    if (key === 'adm.pin' || key === 'adm.pin2') { adminUi[key.slice(4)] = val; return; }
+    if (key === 'adm.text') { adminUi.importText = val; return; }
+    if (key.indexOf('admf.') === 0) { adminUi.form[key.slice(5)] = val; return; }
+    if (key.indexOf('adm.link:') === 0) {
+      var lc = courseById(key.slice(9)); if (!lc) return;
+      if (val) lc.ratingLink = val; else delete lc.ratingLink;
+      save(); applyRatings(); render(); return;
+    }
+    if (key === 'adm.file') { var af = el.files && el.files[0]; if (!af) return; var ar2 = new FileReader(); ar2.onload = function () { adminUi.importText = String(ar2.result || ''); runImport(adminUi.importText); render(); }; ar2.readAsText(af); return; }
+    if (key.indexOf('pcc:') === 0) {
+      var pr = state.rounds.filter(function (x) { return x.id === key.slice(4); })[0]; if (!pr) return;
+      if (val === '') delete pr.pcc; else pr.pcc = +val;
+      if (typeof mCache !== 'undefined' && mCache) mCache.delete(pr);
+      save(); render(); return;
+    }
     if (key === 'sd.dist') { var ar = activeRound(); if (ar) shotDraft(ar).dist = val; return; }
     if (key.indexOf('bag.') === 0) {
       var bp = key.split('.'), bc = state.bag.filter(function (c) { return c.id === bp[1]; })[0];
@@ -5307,7 +6029,7 @@ Object.assign(window.I18N.en, {
     document.addEventListener('change', function (e) { if (e.target.hasAttribute('data-field')) onField(e.target); });
     document.addEventListener('input', function (e) {
       var k = e.target.getAttribute('data-field');
-      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code' || k === 'dir.q' || k === 'play.q')) onField(e.target);
+      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code' || k === 'dir.q' || k === 'play.q' || k === 'adm.pin' || k === 'adm.pin2' || k === 'adm.text' || (k && k.indexOf('admf.') === 0))) onField(e.target);
     });
     window.addEventListener('pagehide', save);
     document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.getAttribute && e.target.getAttribute('data-field') === 'find.q') { view.find.q = e.target.value; searchCourses(view.find.q); } });
@@ -5336,6 +6058,8 @@ Object.assign(window.I18N.en, {
       if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx)) return;
       onAct((k === 'type' ? 'ptype:' : 'pcourse:') + (dx < 0 ? 1 : -1));
     }, { passive: true });
+    applyRatings();
+    if (cloudReady()) setTimeout(function () { pullShared(true).then(function () { render(); }); }, 2500);
     setInterval(function () { syncNow(false); }, 60000);
     window.addEventListener('online', function () { syncNow(false); });
     document.addEventListener('visibilitychange', function () { if (!document.hidden) syncNow(false); });

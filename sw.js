@@ -1,5 +1,5 @@
 /* Banboken service worker – gör appen tillgänglig utan uppkoppling. */
-const CACHE = 'banboken-v7';
+const CACHE = 'banboken-v8';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

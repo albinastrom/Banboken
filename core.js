@@ -40,6 +40,13 @@
     return whsRound(courseHandicapExact(hi, slope, cr, par));
   }
 
+  // 9 hål (WHS): halva Handicap Index med 9-hålsbanans värdering.
+  function courseHandicap9(hi, slope9, cr9, par9) {
+    return whsRound((hi / 2) * (slope9 / 113) + (cr9 - par9));
+  }
+  // WHS 2024: förväntad score differential för 9 ospelade hål, utifrån Handicap Index.
+  function expected9(hi) { return hi * 0.52 + 1.2; }
+
   // Playing Handicap = Course Handicap × handicapreduktion, avrundat.
   function playingHandicap(ch, allowancePct) {
     var pct = allowancePct === undefined ? 100 : allowancePct;
@@ -101,7 +108,8 @@
     var par = sumPar(holes);
     var rated = teeRated(tee);
     // Utan CR/Slope går det inte att räkna handicap: ronden räknas som brutto (0 slag).
-    var ch = rated ? courseHandicap(round.hi, tee.slope, tee.cr, par) : 0;
+    var nine = holes.length === 9;
+    var ch = !rated ? 0 : nine ? courseHandicap9(round.hi, tee.slope, tee.cr, par) : courseHandicap(round.hi, tee.slope, tee.cr, par);
     var ph = playingHandicap(ch, round.allowance);
     var alloc = strokeAllocation(ph, holes);
     var gross = 0, net = 0, points = 0, putts = 0, played = 0, parPlayed = 0;
@@ -126,6 +134,15 @@
     }
     var complete = (played + pickedUp) === holes.length;
     var ags = complete ? adjustedGross(grossScores, holes, alloc) : null;
+    // Score differential: PCC från förbundet om den angetts (annars 0 = preliminär).
+    var pcc = typeof round.pcc === 'number' ? round.pcc : 0, diff18 = null, diff9 = null;
+    if (ags !== null && rated) {
+      if (nine) {
+        var d9 = (113 / tee.slope) * (ags - tee.cr - 0.5 * pcc);
+        diff9 = Math.round(d9 * 10) / 10;
+        diff18 = Math.round((d9 + expected9(round.hi)) * 10) / 10;
+      } else diff18 = scoreDifferential(ags, tee.cr, tee.slope, pcc);
+    }
     return {
       par: par, courseHandicap: ch, playingHandicap: ph, allocation: alloc,
       gross: gross, net: net, points: points, putts: putts, puttHoles: puttHoles,
@@ -133,7 +150,10 @@
       toPar: gross - parPlayed,
       firHit: firHit, firTot: firTot, girHit: girHit, girTot: girTot, penalties: pen,
       adjustedGross: ags,
-      differential: ags === null || !rated ? null : scoreDifferential(ags, tee.cr, tee.slope, 0),
+      differential: diff18,
+      differential9: diff9,
+      pccKnown: typeof round.pcc === 'number',
+      nine: nine,
       unrated: !rated
     };
   }
@@ -143,10 +163,10 @@
     var list = summaries.slice(0, n);
     var out = { rounds: list.length, avgGross: null, avgPoints: null, avgPutts: null, firPct: null, girPct: null, avgPen: null };
     if (!list.length) return out;
-    var full = list.filter(function (s) { return s.complete && s.pickedUp === 0; });
+    var full = list.filter(function (s) { return s.complete && s.pickedUp === 0 && !s.nine; });
     function avg(arr) { return arr.length ? arr.reduce(function (a, b) { return a + b; }, 0) / arr.length : null; }
     out.avgGross = avg(full.map(function (s) { return s.gross; }));
-    out.avgPoints = avg(list.map(function (s) { return s.points; }));
+    out.avgPoints = avg(list.filter(function (s) { return !s.nine; }).map(function (s) { return s.points; }));
     var puttRounds = list.filter(function (s) { return s.puttHoles === s.played && s.played > 0; });
     out.avgPutts = avg(puttRounds.map(function (s) { return s.putts * 18 / s.played; }));
     var fH = 0, fT = 0, gH = 0, gT = 0;
@@ -180,7 +200,7 @@
     playingHandicap: playingHandicap, strokesOnHole: strokesOnHole, strokeAllocation: strokeAllocation,
     stablefordPoints: stablefordPoints, netDoubleBogey: netDoubleBogey, adjustedGross: adjustedGross,
     scoreDifferential: scoreDifferential, sumPar: sumPar, summarizeRound: summarizeRound,
-    aggregate: aggregate, validateTee: validateTee, teeRated: teeRated
+    aggregate: aggregate, validateTee: validateTee, teeRated: teeRated, courseHandicap9: courseHandicap9, expected9: expected9
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
   root.Core = Core;

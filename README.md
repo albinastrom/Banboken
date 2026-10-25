@@ -8,7 +8,7 @@ Allt sparas i telefonen efter varje tryck, så ingenting försvinner vid dålig 
 1. Packa upp zip-filen i appen Filer (tryck på filen).
 2. Öppna github.com/albinastrom/banboken i Safari → **Add file → Upload files**.
 3. Välj dessa filer: `index.html`, `manifest.webmanifest`, `sw.js`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `README.md`, `supabase.sql`
-   (källfilerna `core.js`, `geo.js`, `games.js`, `stats.js`, `sync.js`, `tests.js`, `i18n.js`, `app.js`, `src.html`, `build.js` kan också laddas upp – appen behöver dem inte för att köras).
+   (källfilerna `core.js`, `geo.js`, `games.js`, `stats.js`, `sync.js`, `ratings.js`, `tests.js`, `i18n.js`, `app.js`, `src.html`, `build.js` kan också laddas upp – appen behöver dem inte för att köras).
    Har du redan laddat upp etapp 1: ladda upp de nya filerna med samma namn så ersätts de.
 4. Tryck **Commit changes**.
 5. **Settings → Pages** → Source: *Deploy from a branch* → Branch: `main`, mapp `/ (root)` → Save.
@@ -28,6 +28,7 @@ Uppdatera: ladda upp en ny `index.html` med samma namn. Appen hämtar den nya ve
 | `geo.js` | GPS-geometri: avstånd, green fram/mitt/bak, hinder (nå/över), doglegs, vind relativt hålet, inläsning från OpenStreetMap, demokarta |
 | `games.js` | Spelformer: handicapreduktion per spelform, matchstatus, bästboll, sämstboll, nassau, skins, scramble, Texas scramble, greensome, foursome |
 | `stats.js` | Slagloggar, utökad statistik, Strokes Gained (personlig eller importerad baslinje), regelbaserad coach, klubblängder och klubbförslag |
+| `ratings.js` | Tee- och ratingsystem: datamodell, import (CSV/JSON), validering, slopetabell, herr/dam, 9 hål, granskningsrapport |
 | `sync.js` | Synklogik: vilka dokument som skickas, sammanslagning vid hämtning, livematchens resultat |
 | `supabase.sql` | Databasen för molnsynk och livematcher, med radnivåsäkerhet |
 | `tests.js` | Tester för `core.js`, `geo.js`, `games.js`, `stats.js` och `sync.js` |
@@ -109,6 +110,30 @@ Coachen i etapp 4 är regelbaserad och gratis. En språkmodell (t.ex. Claude via
 **Banor → Alla banor i Sverige → Hämta banregistret.** Appen hämtar alla namngivna golfbanor i Sverige från OpenStreetMap (en gång, sparas i telefonen). Sök på namn eller ort (å/ä/ö behövs inte), eller tryck *Närmast först*. Välj en bana så hämtas hål, greener och hinder, och par och hålindex fylls i där kartdata har dem.
 
 Course Rating och Slope finns inte i öppna data (de ägs av Svenska Golfförbundet). Nya banor sparas därför som *CR/Slope saknas*: du kan spela direkt med GPS och bruttoscore. Fyll i CR och Slope från scorekortet, klubbens hemsida eller Min Golf, så räknas handicap från nästa rond. Matcher med handicap kräver CR och Slope.
+
+## Tee, Course Rating och Slope
+**Datakälla:** officiella slopetabeller ägs av Svenska Golfförbundet och finns bara via deras GIT API, som kräver avtal. Ingen öppen och tillåten källa finns, så appen hämtar inga värden automatiskt och hittar aldrig på värden. I stället finns en slopetabell som du fyller med verifierade uppgifter (klubbens scorekort/slopetabell).
+
+**Datamodell:** Klubb → Bana → Slinga/hålkombination → Tee → Värdering. En värdering är en rad med tee, kön (herr/dam), rondtyp (18 hål, hål 1–9, hål 10–18), Course Rating, Slope, par, längd, källa och verifieringsdatum. Herr- och damvärderingar lagras separat och blandas aldrig.
+
+**Banadministration** (Profil → Banadministration, skyddad med admin-PIN):
+- *Rapport:* granskar alla banor – saknade tee, saknade herr-/damvärderingar, orimliga värden, felaktigt hålindex, par som inte stämmer, dubbletter, banor med flera slingor och banor som inte är kopplade.
+- *Slopetabeller:* alla värderingar per slinga med källa och datum; ändra eller ta bort.
+- *Lägg till/ändra:* en värdering i taget.
+- *Import:* CSV (semikolon eller komma, decimalkomma fungerar) eller JSON. Kolumner: `Klubb;Bana;Slinga;OSM;Tee;Färg;Längd;Par;Kön;Hål;CR;Slope;Källa;Verifierad` (Kön = Herr/Dam, Hål = 18, 1-9 eller 10-18). Rader med fel visas med radnummer och importeras inte.
+- *Koppla banor:* koppla varje bana i appen till rätt slinga. Banan får då automatiskt alla officiella tee.
+- *Delad tabell:* publicera slopetabellen i ditt Supabase-projekt så att alla som använder appen med projektet får samma värden. Bara konton i tabellen `banboken_admins` kan ändra (skyddat i databasen). Gör dig själv till admin med raden längst ned i avsnittet i `supabase.sql`.
+
+**Före ronden** visas bana, tee, längd, värdering (kön och hål), Course Rating, Slope, par, Handicap Index, Course Handicap och Playing Handicap. Saknas verifierad värdering står det exakt vad som saknas; ronden kan då spelas brutto.
+
+**Beräkningar (WHS):**
+- 18 hål: Course Handicap = HI × Slope/113 + (CR − Par).
+- 9 hål: Course Handicap = (HI ÷ 2) × Slope/113 + (CR − Par) med 9-hålsvärderingen; hålindex rangordnas 1–9 inom de nio hålen.
+- Playing Handicap = Course Handicap × handicapandel för spelformen (individuellt, matchspel, bästboll, scramble m.fl. har olika andelar).
+- Score differential = 113/Slope × (justerat brutto − CR − PCC). För 9 hål: 9-hålsdifferential + förväntad differential för 9 ospelade hål (HI × 0,52 + 1,2), enligt WHS 2024.
+- Differentialen är *preliminär* tills du anger dagens PCC (från Min Golf) på ronden. Det officiella handicapgrundande resultatet registreras alltid i Min Golf.
+
+Befintliga ronder påverkas inte: varje rond sparar en kopia av teen och värderingen den spelades med.
 
 ## Live-GPS
 - **En enda GPS-prenumeration** per rond (`watchPosition` med `enableHighAccuracy: true, maximumAge: 0, timeout: 10000`). Den stoppas när du lämnar hålvyn, avslutar ronden eller låser skärmen, och startar om när du kommer tillbaka.

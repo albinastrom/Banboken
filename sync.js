@@ -2,7 +2,7 @@
    Regel vid krock: osynkade ändringar på den här telefonen vinner och skickas vid nästa synk. */
 (function (root) {
   'use strict';
-  var KINDS = ['round', 'course', 'profile', 'bag', 'friends', 'baseline'];
+  var KINDS = ['round', 'course', 'profile', 'bag', 'friends', 'baseline', 'ratings'];
 
   function hash(str) {
     var h = 0x811c9dc5;
@@ -16,10 +16,11 @@
     (state.rounds || []).forEach(function (r) { d['round:' + r.id] = { kind: 'round', id: r.id, data: r }; });
     (state.courses || []).forEach(function (c) { if (c.id !== 'demo') d['course:' + c.id] = { kind: 'course', id: c.id, data: c }; });
     var p = state.profile || {};
-    d['profile:me'] = { kind: 'profile', id: 'me', data: { name: p.name, hi: p.hi, homeClub: p.homeClub, lang: p.lang, theme: p.theme, allowance: p.allowance } };
+    d['profile:me'] = { kind: 'profile', id: 'me', data: { name: p.name, hi: p.hi, homeClub: p.homeClub, lang: p.lang, theme: p.theme, allowance: p.allowance, gender: p.gender || null } };
     d['bag:all'] = { kind: 'bag', id: 'all', data: state.bag || [] };
     d['friends:all'] = { kind: 'friends', id: 'all', data: state.friends || [] };
     if (state.baseline) d['baseline:all'] = { kind: 'baseline', id: 'all', data: state.baseline };
+    if (state.ratingLib && state.ratingLib.length) d['ratings:all'] = { kind: 'ratings', id: 'all', data: state.ratingLib };
     return d;
   }
 
@@ -44,6 +45,7 @@
     else if (kind === 'bag') state.bag = Array.isArray(data) ? data : [];
     else if (kind === 'friends') state.friends = Array.isArray(data) ? data : [];
     else if (kind === 'baseline') state.baseline = data;
+    else if (kind === 'ratings') state.ratingLib = Array.isArray(data) ? data : [];
   }
   function removeDoc(state, kind, id) {
     if (kind === 'round') state.rounds = state.rounds.filter(function (r) { return r.id !== id; });
@@ -51,6 +53,7 @@
     else if (kind === 'baseline') state.baseline = null;
     else if (kind === 'bag') state.bag = [];
     else if (kind === 'friends') state.friends = [];
+    else if (kind === 'ratings') state.ratingLib = [];
   }
   function validRow(row) {
     if (!row || KINDS.indexOf(row.kind) < 0 || typeof row.doc_id !== 'string') return false;
@@ -58,7 +61,7 @@
     var d = row.data;
     if (row.kind === 'round') return d && d.id === row.doc_id && Array.isArray(d.holes) && d.tee && Array.isArray(d.tee.holes);
     if (row.kind === 'course') return d && d.id === row.doc_id && Array.isArray(d.tees);
-    if (row.kind === 'bag' || row.kind === 'friends') return Array.isArray(d);
+    if (row.kind === 'bag' || row.kind === 'friends' || row.kind === 'ratings') return Array.isArray(d);
     return d && typeof d === 'object';
   }
 
@@ -69,7 +72,7 @@
       if (!validRow(row)) { res.invalid++; return; }
       var key = row.kind + ':' + row.doc_id, local = docs[key];
       var localH = local ? hash(stable(local.data)) : null;
-      var single = row.kind === 'profile' || row.kind === 'bag' || row.kind === 'friends';
+      var single = row.kind === 'profile' || row.kind === 'bag' || row.kind === 'friends' || row.kind === 'ratings';
       // Profil, golfbag och vänner som aldrig synkats på den här telefonen tar emot molnets version.
       var dirty = local ? (synced[key] === undefined ? !single : synced[key] !== localH) : !!(synced[key] && synced[key] !== 'deleted');
       if (row.deleted) {

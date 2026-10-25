@@ -2,7 +2,7 @@
    Körs i appen (Profil → Kör beräkningstester) och med: node tests.js */
 (function (root) {
   'use strict';
-  function runTests(Core, Geo, Games, Stats, Sync) {
+  function runTests(Core, Geo, Games, Stats, Sync, Ratings) {
     var results = [];
     function eq(name, actual, expected) {
       var ok = JSON.stringify(actual) === JSON.stringify(expected);
@@ -83,6 +83,17 @@
     eq('Rond: justerat brutto', s.adjustedGross, 8 + (pars.slice(1, 17).reduce(function (a, b) { return a + b; }, 0) + 16) + 8);
     eq('Tee-validering godkänner korrekt tee', Core.validateTee(tee), []);
 
+
+    // ---------- 9 hål och PCC (WHS) ----------
+    eq('9 hål: Course Handicap = HI/2 × Slope/113 + (CR − Par): 14,0 / 113 / 34,5 / 36 → 6', Core.courseHandicap9(14, 113, 34.5, 36), 6);
+    eq('9 hål: förväntad differential för HI 14,0 = 8,48', Math.round(Core.expected9(14) * 100) / 100, 8.48);
+    var t9 = { cr: 33.8, slope: 113, holes: [] }; for (var n9 = 0; n9 < 9; n9++) t9.holes.push({ par: 4, si: n9 + 1 });
+    var r9 = { hi: 14, allowance: 100, holes: [] }; [5, 4, 5, 4, 5, 4, 5, 4, 5].forEach(function (g) { r9.holes.push({ strokes: g }); });
+    var s9 = Core.summarizeRound(r9, t9);
+    eq('9 hål: 41 slag, CR 33,8, Slope 113 → 9-hålsdifferential 7,2 och 18-hålsdifferential 15,7 (USGA:s exempel)', [s9.gross, s9.differential9, s9.differential, s9.nine], [41, 7.2, 15.7, true]);
+    var rp = JSON.parse(JSON.stringify(round)); rp.pcc = 1;
+    var sp = Core.summarizeRound(rp, tee);
+    eq('PCC +1 sänker score differential (preliminär → med PCC)', [sp.pccKnown, sp.differential < s.differential, s.pccKnown], [true, true, false]);
     // Banor utan Course Rating/Slope: bara brutto
     var ut = { name: 'Gul', cr: null, slope: null, unrated: true, holes: tee.holes };
     eq('Tee utan CR/Slope godkänns när det är markerat', Core.validateTee(ut), []);
@@ -331,12 +342,48 @@ var dj = { elements: [
       Sync.computePush(Sync.collectDocs(S3), syn3).upserts.forEach(function (u) { syn3[u.key] = u.h; });
       Sync.applyPull(S3, syn3, [{ kind: 'round', doc_id: 'r1', deleted: true }]);
       eq('Synk: borttagning från annan telefon tar bort rond', S3.rounds.length, 0);
+      var SR = { profile: {}, courses: [], rounds: [], bag: [], friends: [], baseline: null, ratingLib: [{ club: 'A', course: 'B', combo: '18', tee: '56', gender: 'men', holes: '18', cr: 70, slope: 125, par: 72, source: 'x', verifiedAt: '2026-01-01' }] };
+      eq('Synk: slopetabellen synkas som eget dokument', Sync.computePush(Sync.collectDocs(SR), {}).upserts.map(function (u) { return u.key; }).indexOf('ratings:all') >= 0, true);
       var lr = { extra: [{ id: 'p1', holes: [{}, {}, {}] }] };
       eq('Livematch: spelarens egna hål slås ihop', [Sync.mergeLiveScores(lr, { p1: { h: [5, 0, -1] } }), lr.extra[0].holes], [2, [{ strokes: 5 }, {}, { pickedUp: true }]]);
       eq('Livematch: okänd spelare ignoreras', Sync.mergeLiveScores(lr, { zz: { h: [3] } }), 0);
       var seq = [0.01, 0.2, 0.4, 0.6, 0.8, 0.99, 0.5, 0.3], qi = 0;
       var code = Sync.newCode(function () { return seq[qi++]; });
       eq('Livekod: 8 tecken utan förväxlingsbara tecken', [code.length, Sync.validCode(code), Sync.validCode('ABCD1234'), Sync.validCode('abcdefgh')], [8, true, false, false]);
+    }
+
+    if (Ratings) {
+      var today = '2026-10-25';
+      var csv = 'Klubb;Bana;Slinga;Tee;Färg;Längd;Par;Kön;Hål;CR;Slope;Källa;Verifierad\n' +
+        'Exempel GK;Södra;18;56;Gul;5600;72;Herr;18;70,1;128;Scorekort 2026 (exempel);2026-04-01\n' +
+        'Exempel GK;Södra;18;56;Gul;5600;72;Dam;18;75,4;136;Scorekort 2026 (exempel);2026-04-01\n' +
+        'Exempel GK;Södra;18;56;Gul;2790;36;Herr;1-9;34,9;127;Scorekort 2026 (exempel);2026-04-01\n' +
+        'Exempel GK;Södra;18;48;Röd;4800;72;Dam;18;70,9;125;Scorekort 2026 (exempel);2026-04-01\n' +
+        'Exempel GK;Södra;18;48;Röd;4800;72;Dam;18;99,0;125;Scorekort 2026 (exempel);2026-04-01\n' +
+        'Exempel GK;Södra;18;52;Blå;5200;72;Herr;18;68,0;121;;2026-04-01\n' +
+        'Exempel GK;Södra;18;40;Vit;4000;72;Okänd;18;66,0;115;Scorekort;2027-01-01';
+      var imp = Ratings.parseImport(csv, today);
+      eq('Import CSV: semikolon, decimalkomma, svenska kolumnnamn', imp.rows.length, 4);
+      eq('Import: ogiltig CR, saknad källa, okänt kön och framtida datum avvisas', imp.errors.map(function (x) { return x.errors.join(','); }), ['cr', 'source', 'gender,verifiedAt']);
+      var jimp = Ratings.parseImport(JSON.stringify([{ club: 'Exempel GK', course: 'Södra', tee: 56, gender: 'men', holes: '18', cr: 70.1, slope: 128, par: 72, source: 'Scorekort', verifiedAt: '2026-04-01' }]), today);
+      eq('Import JSON fungerar', jimp.rows.length, 1);
+      var m1 = Ratings.mergeLibrary([], imp.rows, '2026-10-25T10:00:00Z');
+      var m2 = Ratings.mergeLibrary(m1.lib, imp.rows.slice(0, 1).map(function (r) { var x = JSON.parse(JSON.stringify(r)); x.slope = 129; return x; }), '2026-10-26T10:00:00Z');
+      eq('Bibliotek: samma värdering ersätts, inga dubbletter', [m1.added, m2.updated, m2.added, m2.lib.length], [4, 1, 0, 4]);
+      var combo = Ratings.combos(m1.lib)[0];
+      var base = []; for (var b2 = 0; b2 < 18; b2++) base.push({ par: 4, si: b2 + 1, length: 300 });
+      var tees = Ratings.buildTees(m1.lib, combo, [{ id: 'old', name: '56', holes: base }]);
+      eq('Tees byggs från slopetabellen, längst först, befintligt id behålls', tees.map(function (x) { return [x.name, x.id === 'old']; }), [['56', true], ['48', false]]);
+      var g56 = tees[0];
+      eq('Herr och dam blandas inte ihop: tee 56', [Ratings.ratingFor(g56, 'men').cr, Ratings.ratingFor(g56, 'women').cr], [70.1, 75.4]);
+      eq('Saknad värdering ger ingen gissning (tee 48 herr)', Ratings.ratingFor(tees[1], 'men'), null);
+      eq('9-hålsvärdering hämtas separat', [Ratings.ratingFor(g56, 'men', 'front9').cr, Ratings.ratingFor(g56, 'men', 'back9')], [34.9, null]);
+      var nt = Ratings.nineTee({ id: 'x', name: '56', holes: [3, 1, 17, 5, 9, 7, 13, 11, 15, 2, 4, 6, 8, 10, 12, 14, 16, 18].map(function (si) { return { par: 4, si: si }; }) }, 'back9', { cr: 35, slope: 120 });
+      eq('9 hål: hål 10–18 med hålindex rangordnat 1–9', [nt.offset, nt.holes.map(function (h) { return h.si; }).join()], [9, '1,2,3,4,5,6,7,8,9']);
+      eq('Egen (ej officiell) värdering märks', Ratings.ratingFor({ cr: 71, slope: 125, holes: [] }, 'women').official, false);
+      var aud = Ratings.audit([{ id: 'c', name: 'Exempel GK Södra', tees: tees }, { id: 'd', name: 'Tom bana', tees: [] }], m1.lib);
+      eq('Granskning: saknad damvärdering och saknad koppling hittas', [aud[0].issues.some(function (x) { return x.code === 'noRating' && x.tee === '48' && x.gender === 'men'; }), aud[1].issues.map(function (x) { return x.code; }).indexOf('noTees') >= 0], [true, true]);
+      eq('Koppling via förslag på namn', Ratings.suggestCombos(m1.lib, { name: 'Exempel GK', club: '' })[0].course, 'Södra');
     }
     return results;
   }
@@ -345,7 +392,7 @@ var dj = { elements: [
 })(typeof window !== 'undefined' ? window : globalThis);
 
 if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
-  var r = module.exports(require('./core.js'), require('./geo.js'), require('./games.js'), require('./stats.js'), require('./sync.js'));
+  var r = module.exports(require('./core.js'), require('./geo.js'), require('./games.js'), require('./stats.js'), require('./sync.js'), require('./ratings.js'));
   var failed = r.filter(function (x) { return !x.ok; });
   r.forEach(function (x) { console.log((x.ok ? 'OK   ' : 'FEL  ') + x.name + (x.ok ? '' : '  (fick ' + JSON.stringify(x.actual) + ', väntat ' + JSON.stringify(x.expected) + ')')); });
   console.log('\n' + (r.length - failed.length) + ' av ' + r.length + ' tester godkända');
