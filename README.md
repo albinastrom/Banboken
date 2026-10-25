@@ -8,7 +8,7 @@ Allt sparas i telefonen efter varje tryck, så ingenting försvinner vid dålig 
 1. Packa upp zip-filen i appen Filer (tryck på filen).
 2. Öppna github.com/albinastrom/banboken i Safari → **Add file → Upload files**.
 3. Välj dessa filer: `index.html`, `manifest.webmanifest`, `sw.js`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `README.md`, `supabase.sql`
-   (källfilerna `core.js`, `geo.js`, `games.js`, `stats.js`, `sync.js`, `ratings.js`, `tests.js`, `i18n.js`, `app.js`, `src.html`, `build.js` kan också laddas upp – appen behöver dem inte för att köras).
+   (källfilerna `core.js`, `geo.js`, `games.js`, `stats.js`, `sync.js`, `ratings.js`, `net.js`, `tests.js`, `i18n.js`, `app.js`, `src.html`, `build.js` kan också laddas upp – appen behöver dem inte för att köras).
    Har du redan laddat upp etapp 1: ladda upp de nya filerna med samma namn så ersätts de.
 4. Tryck **Commit changes**.
 5. **Settings → Pages** → Source: *Deploy from a branch* → Branch: `main`, mapp `/ (root)` → Save.
@@ -29,6 +29,7 @@ Uppdatera: ladda upp en ny `index.html` med samma namn. Appen hämtar den nya ve
 | `games.js` | Spelformer: handicapreduktion per spelform, matchstatus, bästboll, sämstboll, nassau, skins, scramble, Texas scramble, greensome, foursome |
 | `stats.js` | Slagloggar, utökad statistik, Strokes Gained (personlig eller importerad baslinje), regelbaserad coach, klubblängder och klubbförslag |
 | `ratings.js` | Tee- och ratingsystem: datamodell, import (CSV/JSON), validering, slopetabell, herr/dam, 9 hål, granskningsrapport |
+| `net.js` | Robust hämtning: felklassning, nya försök med exponentiell väntan, delade anrop, cache för kartdata |
 | `sync.js` | Synklogik: vilka dokument som skickas, sammanslagning vid hämtning, livematchens resultat |
 | `supabase.sql` | Databasen för molnsynk och livematcher, med radnivåsäkerhet |
 | `tests.js` | Tester för `core.js`, `geo.js`, `games.js`, `stats.js` och `sync.js` |
@@ -110,6 +111,19 @@ Coachen i etapp 4 är regelbaserad och gratis. En språkmodell (t.ex. Claude via
 **Banor → Alla banor i Sverige → Hämta banregistret.** Appen hämtar alla namngivna golfbanor i Sverige från OpenStreetMap (en gång, sparas i telefonen). Sök på namn eller ort (å/ä/ö behövs inte), eller tryck *Närmast först*. Välj en bana så hämtas hål, greener och hinder, och par och hålindex fylls i där kartdata har dem.
 
 Course Rating och Slope finns inte i öppna data (de ägs av Svenska Golfförbundet). Nya banor sparas därför som *CR/Slope saknas*: du kan spela direkt med GPS och bruttoscore. Fyll i CR och Slope från scorekortet, klubbens hemsida eller Min Golf, så räknas handicap från nästa rond. Matcher med handicap kräver CR och Slope.
+
+## Hämtning av kartdata (OpenStreetMap)
+**Orsak till HTTP 504 (åtgärdat):** den tidigare frågan använde `map_to_area` (en av Overpass tyngsta operationer), hämtade alla golfobjekt (`nwr[golf]`) och varje sjö som korsade banan med hela sin geometri (`nwr[natural=water] … out geom`). Nära stora sjöar blev svaret enormt, servern hann inte klart och svarade 504. Vid tomt svar gjordes dessutom en andra, större fråga.
+
+**Nu:**
+- En enda fråga avgränsad till banans område + ca 150 m (`[bbox:…]`), bara de golfobjekt appen använder (hål, green, tee, fairway, bunker, vattenhinder) och geometri klippt till området (`out geom(bbox)`), så stora sjöar skickas inte i sin helhet. Banans kontur hämtas i samma fråga och används för att sortera bort hål från grannbanor.
+- Nya försök vid 504/502/503/429/tidsgräns: max 4 försök över olika servrar med väntan 1 s, 2 s, 4 s (±25 %), `Retry-After` respekteras. Felaktiga frågor (4xx) och saknad uppkoppling provas inte igen.
+- Identiska samtidiga förfrågningar delar på ett anrop.
+- Cache för de 12 senast hämtade banorna (14 dagar). Om servern inte svarar används sparad data, även äldre.
+- Felmeddelanden skiljer på: ingen uppkoppling, tidsgräns, överbelastad server (med HTTP-kod), för många förfrågningar, GPS-behörighet saknas, GPS tidsgräns och ingen position.
+- **Fortsätt utan karta:** banan sparas utan GPS-data; par och index fylls i från scorekortet (tomma fält, inga påhittade värden). Score och statistik fungerar; GPS-avstånd är tydligt avstängda och kartdata kan hämtas senare från rondvyn med *Hämta kartdata nu*.
+
+**Förslag för produktionsdrift:** de publika Overpass-servrarna är gratis men delade och får överbelastas – de är inte avsedda som backend för en app med många användare. En driftsäker lösning som följer OpenStreetMaps villkor (ODbL, källhänvisning) är att förbearbeta data: en schemalagd GitHub Action hämtar Sverige-extraktet från Geofabrik en gång i veckan, plockar ut golfbanornas objekt med osmium och publicerar en liten JSON-fil per bana på samma GitHub Pages-adress som appen. Appen läser då kartdata från egen server (snabbt, cachebart, ingen belastning på Overpass) och använder Overpass bara som reserv. Detta är inte byggt ännu.
 
 ## Design – Scandinavian Luxury Golf
 - **Färger:** Deep Forest #103D2F, Midnight Green #09281F, Champagne Gold #C9A65A (bara detaljer och aktiv navigering), Warm Ivory #F8F6F0, Soft Sage #DDE6DF, Charcoal #202622. Mörkt läge följer telefonen.

@@ -298,7 +298,11 @@
   }
   function gpsInner(r) {
     var x = holeCtx(r), h = '';
-    if (!x.g) return '<div class="gps-under"><p class="note">' + esc(t('noGeo')) + '</p></div>' + (gps.test ? testPanel() : '');
+    if (!x.g) {
+      var gcourse = courseById(r.courseId);
+      return '<div class="gps-under nogeo"><p class="note"><b>' + esc(t('gpsOffNoMap')) + '</b> ' + esc(t('scoreStillWorks')) + '</p>' +
+        (gcourse && gcourse.osm ? '<button class="btn ghost" data-act="geo-retry"' + (view.geoBusy ? ' disabled' : '') + '>' + esc(view.geoBusy ? t('geoLoading') : t('fetchMapNow')) + '</button>' : '<p class="note">' + esc(t('noGeo')) + '</p>') + '</div>' + (gps.test ? testPanel() : '');
+    }
     var showMap = state.ui.mapOpen && !!x.hole;
     h += '<div class="mapwrap' + (showMap ? '' : ' nomap') + '">';
     if (showMap) h += '<div id="gps-map">' + mapSvg(x.hole, x.gc) + '</div>';
@@ -530,15 +534,37 @@
   // ---------- Hämta banor från OpenStreetMap ----------
   // Flera öppna Overpass-servrar: om en är upptagen provas nästa.
   var OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+  var NET = window.Net;
+  // HTTP med tidsgräns. Fel får status, Retry-After och tydlig typ så att de kan klassas.
   function timedFetch(url, opts, ms) {
-    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, tm = setTimeout(function () { if (ctl) ctl.abort(); }, ms);
+    var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, timedOut = false;
+    var tm = setTimeout(function () { timedOut = true; if (ctl) ctl.abort(); }, ms);
     if (ctl) opts.signal = ctl.signal;
-    return fetch(url, opts).then(function (r) { clearTimeout(tm); if (!r.ok) throw new Error('http ' + r.status); return r.json(); }, function (e) { clearTimeout(tm); throw e; });
+    return fetch(url, opts).then(function (r) {
+      clearTimeout(tm);
+      if (!r.ok) { var e = new Error('HTTP ' + r.status); e.status = r.status; var ra = parseFloat(r.headers.get('Retry-After')); if (isFinite(ra)) e.retryAfter = ra; throw e; }
+      return r.json().then(function (j) {
+        // Overpass kan svara 200 men med ett körfel (t.ex. tidsgräns) i "remark".
+        if (j && typeof j.remark === 'string' && /runtime error|timed out|out of memory|too busy/i.test(j.remark)) { var se = new Error(j.remark); se.kind = 'server'; throw se; }
+        return j;
+      }, function () { var pe = new Error('Ogiltigt svar'); pe.kind = 'server'; throw pe; });
+    }, function (e) { clearTimeout(tm); if (timedOut) { var te = new Error('timeout'); te.name = 'AbortError'; throw te; } throw e; });
   }
-  function overpass(q, i, ms) {
-    i = i || 0;
-    return timedFetch(OVERPASS[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q) }, ms || 60000)
-      .catch(function (e) { if (i + 1 < OVERPASS.length) return overpass(q, i + 1, ms); throw e; });
+  var OP = NET.createOverpass({
+    servers: OVERPASS,
+    request: function (url, q, ms) { return timedFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q) }, ms); },
+    sleep: function (ms) { return new Promise(function (res) { setTimeout(res, ms); }); },
+    online: function () { return navigator.onLine !== false; },
+    rand: Math.random
+  });
+  function overpass(q, i, ms, opts) { return OP.query(q, Object.assign({ ms: ms || 25000 }, opts || {})); }
+  var geoCache = NET.createGeoCache({ get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: function (k, v) { localStorage.setItem(k, v); } }, 'banboken:geo-cache', 12);
+  // Felmeddelanden som skiljer på nätverk, tidsgräns, serverfel och överbelastning.
+  function errText(e) {
+    var kind = NET.classify(e, navigator.onLine !== false);
+    var m = kind === 'network' ? t('errNetwork') : kind === 'timeout' ? t('errTimeout') : kind === 'rate' ? t('errRate')
+      : kind === 'server' ? fmt(t('errServer'), { s: e && e.status ? 'HTTP ' + e.status : t('serverErrShort') }) : kind === 'client' ? fmt(t('errClient'), { s: e && e.status ? e.status : '' }) : t('netError');
+    return m + previewSuffix();
   }
   function netDetail(e) {
     var m = e && e.message ? String(e.message) : '';
@@ -577,16 +603,36 @@
       view.find.status = 'done'; render();
     }).catch(findError);
   }
-  function fetchCourseGeo(res) {
-    var meta = { osmRef: res.osmType + '/' + res.osmId, name: res.name };
-    // Korta tidsgränser (20 s per server) så att en långsam server inte låser appen.
-    var aq = '[out:json][timeout:20];' + res.osmType + '(' + res.osmId + ');map_to_area->.a;(nwr[golf](area.a);nwr[natural=water](area.a););out geom;';
-    return overpass(aq, 0, 22000).then(function (j) {
+  // Hämtar banans kartdata: en liten, avgränsad fråga; cache i 14 dagar; sparad data används om servern inte svarar.
+  function fetchCourseGeo(res, opts) {
+    opts = opts || {};
+    var ref = { type: res.osmType, id: res.osmId }, key = ref.type + '/' + ref.id;
+    var meta = { osmRef: key, name: res.name, boundary: key }, cached = geoCache.get(key);
+    if (cached && !opts.force && Date.now() - new Date(cached.at).getTime() < 14 * 86400000) {
+      cached.geo.fromCache = true; cached.geo.cachedAt = cached.at; return Promise.resolve(cached.geo);
+    }
+    var bp = res.bounds && res.bounds.every(isFinite) ? Promise.resolve(res.bounds)
+      : overpass(G.boundsQuery(ref), 0, 15000, { maxAttempts: 3 }).then(function (j) {
+          var el = (j.elements || [])[0], b = el && el.bounds;
+          if (!b) { var de = new Error(t('courseNotFound')); de.kind = 'data'; throw de; }
+          return [b.minlat, b.minlon, b.maxlat, b.maxlon];
+        });
+    return bp.then(function (b) {
+      return overpass(G.courseQuery(ref, b, 25), 0, 30000, { maxAttempts: 4, onAttempt: opts.onAttempt });
+    }).then(function (j) {
       var geo = G.buildFromOsm(j, meta);
-      if (Object.keys(geo.holes).length || !res.bounds) return geo;
-      var b = res.bounds, bb = [b[0] - 0.002, b[1] - 0.003, b[2] + 0.002, b[3] + 0.003].join(',');
-      return overpass('[out:json][timeout:20];(nwr[golf](' + bb + ');nwr[natural=water](' + bb + '););out geom;', 0, 22000).then(function (j2) { return G.buildFromOsm(j2, meta); });
+      geoCache.put(key, geo, new Date().toISOString());
+      return geo;
+    }, function (e) {
+      if (cached) { cached.geo.fromCache = true; cached.geo.cachedAt = cached.at; cached.geo.staleCache = true; return cached.geo; }
+      throw e;
     });
+  }
+  // Tee utan påhittade värden: par och index lämnas tomma tills de fylls i från scorekortet.
+  function manualTee() {
+    var te = blankTee(); te.unrated = true; te.name = t('defaultTee');
+    te.holes.forEach(function (h) { h.par = null; h.si = null; });
+    return te;
   }
   function teeFromGeo(geo) {
     var te = blankTee(), hs = [];
@@ -602,13 +648,13 @@
     view.find.status = 'loading'; view.find.msg = t('geoLoading'); render();
     fetchCourseGeo(res).then(function (geo) {
       if (view.find.link && view.draft) {
-        view.draft.geo = geo;
+        view.draft.geo = geo; view.draft.osm = { type: res.osmType, id: res.osmId, bounds: res.bounds };
         if (view.draft.lat === null || view.draft.lat === undefined) { view.draft.lat = +res.lat.toFixed(5); view.draft.lon = +res.lon.toFixed(5); }
         if (view.draft.isNew && !view.draft.tees[0].cr) view.draft.tees[0] = teeFromGeo(geo);
       } else {
         var ex = state.courses.filter(function (c) { return c.geo && c.geo.osmRef === geo.osmRef; })[0];
         if (ex) { view.draft = JSON.parse(JSON.stringify(ex)); view.draft.geo = geo; }
-        else view.draft = { isNew: true, id: uid(), name: res.name, club: '', lat: +res.lat.toFixed(5), lon: +res.lon.toFixed(5), verified: false, geo: geo, tees: [teeFromGeo(geo)] };
+        else view.draft = { isNew: true, id: uid(), name: res.name, club: '', lat: +res.lat.toFixed(5), lon: +res.lon.toFixed(5), verified: false, geo: geo, osm: { type: res.osmType, id: res.osmId, bounds: res.bounds }, tees: [teeFromGeo(geo)] };
       }
       view.sub = 'edit'; view.dirLink = false; view.errors = []; view.flash = t('geoLinked'); view.find = { status: 'idle', results: [] }; window.scrollTo(0, 0); render();
     }).catch(findError);
@@ -1511,7 +1557,7 @@
   function fetchDirectory() {
     dirState.status = 'loading'; dirState.msg = null; render();
     var q = '[out:json][timeout:120];area["ISO3166-1"="SE"][admin_level=2]->.se;(way[leisure=golf_course](area.se);relation[leisure=golf_course](area.se););out tags bb;';
-    overpass(q, 0, 150000).then(function (j) {
+    overpass(q, 0, 150000, { maxAttempts: 3 }).then(function (j) {
       var d = G.parseDirectory(j);
       if (!d.items.length) throw new Error(t('emptyResult'));
       dir = { fetchedAt: new Date().toISOString(), items: d.items, unnamed: d.unnamed };
@@ -1519,7 +1565,7 @@
       dirState.status = 'done'; render();
     }).catch(function (e) {
       dirState.status = 'error';
-      dirState.msg = t('dirFailed') + netDetail(e) + previewSuffix();
+      dirState.msg = t('dirFailed') + ' ' + errText(e);
       render();
     });
   }
@@ -1530,7 +1576,7 @@
     if (near.key === key && (near.status === 'loading' || near.status === 'done')) return;
     near = { status: 'loading', items: near.items, msg: null, key: key }; render();
     var q = '[out:json][timeout:40];(way[leisure=golf_course](around:60000,' + pos[0] + ',' + pos[1] + ');relation[leisure=golf_course](around:60000,' + pos[0] + ',' + pos[1] + '););out tags bb;';
-    overpass(q, 0, 45000).then(function (j) {
+    overpass(q, 0, 30000, { maxAttempts: 3 }).then(function (j) {
       near.items = G.parseDirectory(j).items; near.status = 'done'; render();
     }).catch(function (e) {
       var d = 0.6, vb = [pos[1] - d, pos[0] + d / 2, pos[1] + d, pos[0] - d / 2].join(',');
@@ -1540,7 +1586,7 @@
           return { n: x.name || x.display_name.split(',')[0], t: x.osm_type, id: x.osm_id, lat: +x.lat, lon: +x.lon, b: [bb[0], bb[2], bb[1], bb[3]], c: (x.display_name.split(',')[2] || '').trim(), h: null };
         });
         near.status = 'done'; render();
-      }).catch(function (e2) { near.status = 'error'; near.msg = t('nearFailed') + netDetail(e2 || e) + previewSuffix(); render(); });
+      }).catch(function (e2) { near.status = 'error'; near.msg = t('nearFailed') + ' ' + errText(e2 || e); render(); });
     });
   }
   function addedRefs() { var m = {}; state.courses.forEach(function (c) { if (c.geo && c.geo.osmRef) m[c.geo.osmRef] = c.id; }); return m; }
@@ -1708,7 +1754,10 @@
       '<button class="roundbtn" data-act="pcourse:1"' + (pl.idx >= list.length - 1 ? ' disabled' : '') + ' aria-label="' + esc(t('next')) + '">›</button></div></div>';
     h += '<div class="psheet">';
     if (pl.posStatus === 'asking') h += '<p class="note">' + esc(t('findingNearest')) + '</p>';
-    if (pl.posStatus === 'denied') h += '<p class="note">' + esc(t('posForNearest')) + '</p>';
+    if (pl.posStatus === 'denied' || pl.posStatus === 'timeout' || pl.posStatus === 'unavailable') {
+      h += '<p class="note">' + esc(t(pl.posStatus === 'denied' ? 'posDenied' : pl.posStatus === 'timeout' ? 'posTimeout' : 'posUnavailable')) + '</p>' +
+        (pl.posStatus !== 'denied' ? '<button class="chip" data-act="play-pos-retry">' + esc(t('retry')) + '</button>' : '');
+    }
     if (!dir && near.status === 'loading') h += '<p class="note">' + esc(t('nearLoading')) + '</p>';
     else if (dirState.status === 'loading' && !(near.items && near.items.length)) h += '<p class="note">' + esc(t('dirLoading')) + '</p>';
     if (!dir && dirState.status === 'error' && near.status !== 'done') {
@@ -1728,9 +1777,10 @@
     if (pl.err) h += '<p class="warn">' + esc(pl.err) + '</p>';
     if (pl.busy) {
       h += '<div class="busybox" role="status"><span class="spin" aria-hidden="true"></span><span>' + esc(t('geoLoading')) + ' <b id="play-elapsed">' + Math.round((Date.now() - pl.started) / 1000) + ' s</b></span></div>' +
-        '<p class="note" id="play-slow" hidden>' + esc(t('geoSlow')) + '</p><button class="btn ghost wide" data-act="play-cancel">' + esc(t('cancel')) + '</button>';
+        '<p class="note" id="play-slow"' + (pl.attemptText ? '' : ' hidden') + '>' + esc(pl.attemptText || t('geoSlow')) + '</p><button class="btn ghost wide" data-act="play-cancel">' + esc(t('cancel')) + '</button>';
     } else {
       h += '<button class="btn gold big" data-act="play-go"' + (!cur ? ' disabled' : '') + '>' + (pl.err ? esc(t('retry')) : esc(t('gameSettings')) + ' »') + '</button>';
+      if (pl.err && cur && cur.kind === 'dir') h += '<button class="btn ghost wide" data-act="play-nomap">' + esc(t('continueNoMap')) + '</button><p class="note">' + esc(t('continueNoMapHelp')) + '</p>';
     }
     return h + '</div>';
   }
@@ -1758,11 +1808,22 @@
     view.play.step = 'course'; view.play.idx = 0;
     if (!dir && view.play.pos) fetchNearby(view.play.pos);
     if (!dir && dirState.status !== 'loading' && navigator.onLine !== false) fetchDirectory();
-    if (!view.play.pos && navigator.geolocation) {
-      view.play.posStatus = 'asking';
-      navigator.geolocation.getCurrentPosition(function (p) { view.play.pos = [p.coords.latitude, p.coords.longitude]; view.play.posStatus = 'ok'; view.play.idx = 0; if (!dir) fetchNearby(view.play.pos); if (view.tab === 'play') render(); },
-        function () { view.play.posStatus = 'denied'; if (view.tab === 'play') render(); }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
-    }
+    if (!view.play.pos || Date.now() - (view.play.posAt || 0) > 10 * 60000) requestPlayPos();
+  }
+  // Position för "närmaste bana": skiljer på nekad behörighet, ingen position och tidsgräns.
+  function requestPlayPos() {
+    if (!navigator.geolocation) { view.play.posStatus = 'unavailable'; return; }
+    view.play.posStatus = 'asking';
+    navigator.geolocation.getCurrentPosition(function (p) {
+      var first = !view.play.pos;
+      view.play.pos = [p.coords.latitude, p.coords.longitude]; view.play.posAt = Date.now(); view.play.posAcc = p.coords.accuracy; view.play.posStatus = 'ok';
+      if (first) view.play.idx = 0;
+      if (!dir) fetchNearby(view.play.pos);
+      if (view.tab === 'play') render();
+    }, function (e) {
+      view.play.posStatus = e && e.code === 1 ? 'denied' : e && e.code === 3 ? 'timeout' : 'unavailable';
+      if (view.tab === 'play') render();
+    }, { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 });
   }
   function goSetupFromPlay(course, teeId) {
     var ty = PLAY_TYPES[view.play.type];
@@ -1787,22 +1848,38 @@
       var s = Math.round((Date.now() - pl.started) / 1000);
       el.textContent = s + ' s';
       var hint = document.getElementById('play-slow');
-      if (hint && s >= 15) hint.hidden = false;
+      if (hint && s >= 15 && !pl.attemptText) hint.hidden = false;
     }, 1000);
-    fetchCourseGeo(res).then(function (geo) {
+    pl.attemptText = null;
+    fetchCourseGeo(res, { onAttempt: function (n, max) {
+      if (n < 2) return;
+      pl.attemptText = fmt(t('attemptN'), { n: n, m: max });
+      var hint = document.getElementById('play-slow'); if (hint) { hint.textContent = pl.attemptText; hint.hidden = false; }
+    } }).then(function (geo) {
       if (pl.busy !== token) return;
       pl.busy = false; clearInterval(pl.ticker);
-      var course = { id: uid(), name: it.n, club: it.c || '', lat: +it.lat.toFixed(5), lon: +it.lon.toFixed(5), verified: false, geo: geo, tees: [teeFromGeo(geo)] };
+      if (!Object.keys(geo.holes).length) { pl.err = t('noHolesInOsm'); pl.errKind = 'data'; render(); return; }
+      var course = { id: uid(), name: it.n, club: it.c || '', lat: +it.lat.toFixed(5), lon: +it.lon.toFixed(5), verified: false, geo: geo, osm: { type: it.t, id: it.id, bounds: it.b }, tees: [teeFromGeo(geo)] };
+      if (geo.fromCache) view.flash = fmt(t('usingCache'), { d: fmtDate(geo.cachedAt) });
       if (osmComplete(geo)) {
-        state.courses.push(course); save(); view.flash = t('courseAdded'); goSetupFromPlay(course, course.tees[0].id); render();
+        state.courses.push(course); save(); if (!geo.fromCache) view.flash = t('courseAdded'); goSetupFromPlay(course, course.tees[0].id); render();
       } else {
         course.isNew = true; view.draft = course; view.errors = []; view.playResume = PLAY_TYPES[pl.type];
         view.tab = 'courses'; view.sub = 'edit'; view.flash = t('completeCard'); window.scrollTo(0, 0); render();
       }
     }).catch(function (e) {
       if (pl.busy !== token) return;
-      pl.busy = false; clearInterval(pl.ticker); pl.err = t('geoFailed') + netDetail(e) + previewSuffix(); render();
+      pl.busy = false; clearInterval(pl.ticker); pl.err = t('geoFailed') + ' ' + errText(e); pl.errKind = NET.classify(e); render();
     });
+  }
+  // Fortsätt utan karta: banan sparas utan GPS-data och par/index fylls i från scorekortet.
+  function playNoMap() {
+    var pl = view.play, list = playCandidates(), cur = list[Math.min(pl.idx, list.length - 1)];
+    if (!cur || cur.kind !== 'dir') return;
+    var it = cur.it;
+    view.draft = { isNew: true, id: uid(), name: it.n, club: it.c || '', lat: +it.lat.toFixed(5), lon: +it.lon.toFixed(5), verified: false, osm: { type: it.t, id: it.id, bounds: it.b }, tees: [manualTee()] };
+    view.errors = []; view.playResume = PLAY_TYPES[pl.type]; pl.err = null;
+    view.tab = 'courses'; view.sub = 'edit'; view.flash = t('noMapFlash'); window.scrollTo(0, 0);
   }
 
   // ======================= TEE, COURSE RATING OCH SLOPE =======================
@@ -2978,6 +3055,17 @@
       case 'pdir': { var pd = v.split(':'), pit = (dir ? dir.items : near.items || []).filter(function (x) { return x.t === pd[0] && String(x.id) === pd[1]; })[0]; if (pit) { view.play.pinned = { kind: 'dir', id: pit.t + ':' + pit.id, name: pit.n, sub: pit.c, lat: pit.lat, lon: pit.lon, it: pit }; view.play.idx = 0; view.play.search = false; } break; }
       case 'play-details': { var pl0 = playCandidates()[view.play.idx]; if (pl0 && pl0.kind === 'saved') { view.tab = 'courses'; onAct('edit-course:' + pl0.id); return; } break; }
       case 'play-go': playGo(); return;
+      case 'play-nomap': playNoMap(); break;
+      case 'play-pos-retry': requestPlayPos(); break;
+      case 'geo-retry': {
+        var gc = r && courseById(r.courseId); if (!gc || !gc.osm || view.geoBusy) return;
+        view.geoBusy = true; refreshGps(true);
+        fetchCourseGeo({ name: gc.name, osmType: gc.osm.type, osmId: gc.osm.id, bounds: gc.osm.bounds }, { force: true }).then(function (geo) {
+          if (Object.keys(geo.holes).length) { gc.geo = geo; save(); view.flash = geo.fromCache ? fmt(t('usingCache'), { d: fmtDate(geo.cachedAt) }) : t('geoLoaded'); }
+          else view.flash = t('noHolesInOsm');
+        }, function (e) { view.flash = errText(e); }).then(function () { view.geoBusy = false; render(); });
+        return;
+      }
       case 'play-cancel': view.play.busy = false; clearInterval(view.play.ticker); break;
       case 'play-retry': near.key = null; if (view.play.pos) fetchNearby(view.play.pos); if (!dir) fetchDirectory(); return;
       case 'play-back-course': if (view.play) { view.tab = 'play'; view.sub = null; view.play.step = 'course'; } else { view.tab = 'home'; view.sub = null; } break;
@@ -3051,7 +3139,7 @@
       case 'p-allowance': state.profile.allowance = +v; save(); break;
       case 'lang': state.profile.lang = v; save(); break;
       case 'theme': state.profile.theme = v; save(); break;
-      case 'run-tests': view.tests = window.runCoreTests(C, window.Geo, window.Games, window.Stats, window.Sync, window.Ratings); break;
+      case 'run-tests': view.tests = window.runCoreTests(C, window.Geo, window.Games, window.Stats, window.Sync, window.Ratings, window.Net); break;
       case 'export': {
         var blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
         var fname = 'banboken-' + new Date().toISOString().slice(0, 10) + '.json';
@@ -3190,7 +3278,11 @@
     }, true);
     window.addEventListener('online', function () { satFailed = false; });
     // Webbappar får ingen GPS i bakgrunden: spårningen stoppas när appen döljs och startar om när den visas.
-    document.addEventListener('visibilitychange', function () { if (document.hidden) { if (!gps.test) gpsStop(); releaseWake(); } else render(); });
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) { if (!gps.test) gpsStop(); releaseWake(); return; }
+      if (view.tab === 'play' && view.play && view.play.step === 'course' && Date.now() - (view.play.posAt || 0) > 10 * 60000) requestPlayPos();
+      render();
+    });
     if (window.matchMedia) {
       var mq = window.matchMedia('(prefers-color-scheme: dark)');
       if (mq.addEventListener) mq.addEventListener('change', render);

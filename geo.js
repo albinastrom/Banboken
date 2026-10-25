@@ -184,25 +184,51 @@
   function intTag(v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; }
 
   function buildFromOsm(json, meta) {
-    var holes = {}, polys = { green: [], bunker: [], water: [], fairway: [], tee: [] }, dup = 0;
+    var holes = {}, polys = { green: [], bunker: [], water: [], fairway: [], tee: [] }, dup = 0, cands = [], boundary = [];
+    var bref = meta && meta.boundary ? String(meta.boundary).split('/') : null;
     (json.elements || []).forEach(function (el) {
+      if (bref && el.type === bref[0] && String(el.id) === bref[1]) { boundary = polysOf(el); return; }
       var t = el.tags || {}, k = kindOf(t);
       if (!k) return;
       if (k === 'hole') {
         var line = geomOf(el), ref = String(intTag(t.ref) || '');
         if (!ref || line.length < 2) return;
-        if (holes[ref]) { dup++; return; }
-        holes[ref] = { ref: ref, par: intTag(t.par), si: intTag(t.handicap), dist: intTag(t.dist), line: line };
+        cands.push({ ref: ref, par: intTag(t.par), si: intTag(t.handicap), dist: intTag(t.dist), line: line });
       } else {
         polysOf(el).forEach(function (p) { polys[k].push(p); });
       }
     });
+    // Hål från en grannbana i samma område tas bort: hålets mittpunkt måste ligga inom banans kontur.
+    var outside = 0;
+    if (boundary.length) {
+      cands = cands.filter(function (h) {
+        var mid = h.line[Math.floor(h.line.length / 2)], P = proj(mid);
+        var inside = boundary.some(function (poly) { return pointInPolyXY([0, 0], poly.map(P.xy)); });
+        if (!inside) outside++;
+        return inside;
+      });
+    }
+    cands.forEach(function (h) { if (holes[h.ref]) { dup++; return; } holes[h.ref] = h; });
     Object.keys(holes).forEach(function (ref) { assign(holes[ref], polys); });
     return {
       source: 'osm', osmRef: meta && meta.osmRef, name: meta && meta.name, fetchedAt: new Date().toISOString(),
-      holes: holes, duplicates: dup
+      holes: holes, duplicates: dup, outside: outside
     };
   }
+  // Overpass-fråga för en banas kartdata: bara de golfobjekt appen använder, inom banans gränser + ca 150 m,
+  // med geometrin klippt till samma område (stora sjöar skickas inte i sin helhet).
+  var GOLF_KINDS = 'hole|green|bunker|tee|fairway|water_hazard|lateral_water_hazard';
+  function courseQuery(ref, bounds, timeoutSec) {
+    var pl = 0.0015, po = 0.0028;
+    var bb = [bounds[0] - pl, bounds[1] - po, bounds[2] + pl, bounds[3] + po].map(function (v) { return v.toFixed(5); }).join(',');
+    return '[out:json][timeout:' + (timeoutSec || 25) + '][maxsize:33554432][bbox:' + bb + '];(' +
+      ref.type + '(' + ref.id + ');' +
+      'way[golf~"^(' + GOLF_KINDS + ')$"];' +
+      'relation[golf~"^(green|bunker|fairway|tee|water_hazard|lateral_water_hazard)$"];' +
+      'way[natural=water];relation[natural=water];' +
+      ');out geom(' + bb + ');';
+  }
+  function boundsQuery(ref) { return '[out:json][timeout:15];' + ref.type + '(' + ref.id + ');out bb;'; }
   function assign(h, polys) {
     var end = h.line[h.line.length - 1], start = h.line[0], best = null;
     polys.green.forEach(function (g) {
@@ -415,7 +441,7 @@
   var Geo = {
     dist: dist, bearing: bearing, proj: proj, centroid: centroid, polylineInfo: polylineInfo, lineLength: lineLength,
     greenDistances: greenDistances, hazardsAhead: hazardsAhead, doglegs: doglegs, nearestHole: nearestHole,
-    windRelative: windRelative, buildFromOsm: buildFromOsm, coverage: coverage, demoGeometry: demoGeometry,
+    windRelative: windRelative, buildFromOsm: buildFromOsm, courseQuery: courseQuery, boundsQuery: boundsQuery, coverage: coverage, demoGeometry: demoGeometry,
     createGpsFilter: createGpsFilter, gpsQuality: gpsQuality, offsetPoint: offsetPoint,
     pointInPolyXY: pointInPolyXY, parseDirectory: parseDirectory, searchDirectory: searchDirectory, fold: fold, lon2tile: lon2tile, lat2tile: lat2tile, tile2lon: tile2lon, tile2lat: tile2lat
   };

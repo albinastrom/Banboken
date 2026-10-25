@@ -2,7 +2,7 @@
    Körs i appen (Profil → Kör beräkningstester) och med: node tests.js */
 (function (root) {
   'use strict';
-  function runTests(Core, Geo, Games, Stats, Sync, Ratings) {
+  function runTests(Core, Geo, Games, Stats, Sync, Ratings, Net) {
     var results = [];
     function eq(name, actual, expected) {
       var ok = JSON.stringify(actual) === JSON.stringify(expected);
@@ -196,6 +196,18 @@ var dj = { elements: [
       eq('GPS 6: ingen ny position på 16 s → signal förlorad', Geo.gpsQuality({ acc: 5, ts: T0 }, T0 + 16000), 'lost');
       eq('GPS-status: ±25 m → låg noggrannhet', Geo.gpsQuality({ acc: 25, ts: T0 }, T0 + 1000), 'weak');
       eq('GPS-status: ±5 m → bra', Geo.gpsQuality({ acc: 5, ts: T0 }, T0 + 1000), 'good');
+// Overpass-frågan för en bana
+      var cq = Geo.courseQuery({ type: 'way', id: 123 }, [59.40, 18.10, 59.42, 18.14]);
+      eq('Fråga: begränsad till banans område med marginal', /\[bbox:59\.39850,18\.09720,59\.42150,18\.14280\]/.test(cq), true);
+      eq('Fråga: geometrin klipps till området (inga hela sjöar)', /out geom\(59\.39850,18\.09720,59\.42150,18\.14280\);$/.test(cq), true);
+      eq('Fråga: ingen tung areasökning och bara nödvändiga golfobjekt', [cq.indexOf('map_to_area'), cq.indexOf('nwr[golf]'), /golf~"\^\(hole\|green/.test(cq)], [-1, -1, true]);
+      var nb = { elements: [
+        { type: 'way', id: 9, tags: { leisure: 'golf_course' }, geometry: sq(-50, -50, 150, 400).concat([L(-50, -50)]).map(function (p) { return { lat: p[0], lon: p[1] }; }) },
+        way(1, { golf: 'hole', ref: '1', par: '4' }, [L(0, 0), L(0, 300)]),
+        way(2, { golf: 'hole', ref: '1', par: '5' }, [L(600, 0), L(600, 400)])
+      ] };
+      var nbg = Geo.buildFromOsm(nb, { osmRef: 'way/9', boundary: 'way/9' });
+      eq('Grannbanans hål med samma nummer sorteras bort via banans kontur', [nbg.holes['1'].par, nbg.duplicates, nbg.outside], [4, 0, 1]);
       eq('Demo-geometri: 18 hål med green', Geo.coverage(demo).greens, 18);
     }
 
@@ -385,16 +397,64 @@ var dj = { elements: [
       eq('Granskning: saknad damvärdering och saknad koppling hittas', [aud[0].issues.some(function (x) { return x.code === 'noRating' && x.tee === '48' && x.gender === 'men'; }), aud[1].issues.map(function (x) { return x.code; }).indexOf('noTees') >= 0], [true, true]);
       eq('Koppling via förslag på namn', Ratings.suggestCombos(m1.lib, { name: 'Exempel GK', club: '' })[0].course, 'Södra');
     }
+
+    if (Net) {
+      eq('Felklass: HTTP 504 = serverfel', Net.classify({ status: 504 }), 'server');
+      eq('Felklass: 429 = överbelastning, 400 = klientfel, avbrott = tidsgräns', [Net.classify({ status: 429 }), Net.classify({ status: 400 }), Net.classify({ name: 'AbortError' })], ['rate', 'client', 'timeout']);
+      eq('Felklass: utan uppkoppling = nätverk', Net.classify(new TypeError('Load failed'), false), 'network');
+      eq('Väntetid växer exponentiellt med tak', [Net.backoffMs(0, null, 0.5), Net.backoffMs(1, null, 0.5), Net.backoffMs(2, null, 0.5), Net.backoffMs(5, null, 0.5)], [1000, 2000, 4000, 8000]);
+      eq('Retry-After från servern respekteras (max 8 s)', [Net.backoffMs(0, null, 0.5, 3), Net.backoffMs(0, null, 0.5, 60)], [3000, 8000]);
+    }
     return results;
   }
   if (typeof module !== 'undefined' && module.exports) module.exports = runTests;
   root.runCoreTests = runTests;
 })(typeof window !== 'undefined' ? window : globalThis);
 
+function runAsyncNetTests(Net) {
+  var out = [];
+  function eqA(name, a, b) { out.push({ name: name, ok: JSON.stringify(a) === JSON.stringify(b), actual: a, expected: b }); }
+  function client(script, extra) {
+    var calls = [], sleeps = [];
+    var c = Net.createOverpass(Object.assign({ servers: ['s1', 's2', 's3', 's4'], rand: function () { return 0.5; },
+      sleep: function (ms) { sleeps.push(ms); return Promise.resolve(); },
+      request: function (url, q, ms) { calls.push(url); var r = script[calls.length - 1]; return r && r.ok ? Promise.resolve(r.ok) : Promise.reject(r ? r.err : { status: 504 }); } }, extra || {}));
+    return { c: c, calls: calls, sleeps: sleeps };
+  }
+  var a = client([{ err: { status: 504 } }, { err: { status: 504 } }, { ok: { elements: [1] } }]);
+  var b = client([{ err: { status: 400 } }]);
+  var c2 = client([{ err: { name: 'AbortError' } }, { err: { name: 'AbortError' } }, { err: { name: 'AbortError' } }, { err: { name: 'AbortError' } }]);
+  var d = client([{ err: { status: 429, retryAfter: 2 } }, { ok: { elements: [] } }]);
+  var e = client([{ ok: { elements: [] } }]);
+  var f = client([{ err: new TypeError('Load failed') }], { online: function () { return false; } });
+  var p1 = e.c.query('Q'), p2 = e.c.query('Q');
+  return Promise.all([
+    a.c.query('Q').then(function (j) { eqA('504 två gånger → lyckas på tredje servern efter väntan 1 s, 2 s', [j.elements.length, a.calls, a.sleeps], [1, ['s1', 's2', 's3'], [1000, 2000]]); }),
+    b.c.query('Q').then(null, function (er) { eqA('Felaktig fråga (400) provas inte igen', [er.kind, b.calls.length], ['client', 1]); }),
+    c2.c.query('Q').then(null, function (er) { eqA('Tidsgräns: max 4 försök, sedan tydligt fel', [er.kind, c2.calls.length], ['timeout', 4]); }),
+    d.c.query('Q').then(function () { eqA('429 med Retry-After 2 s → väntar 2 s', d.sleeps, [2000]); }),
+    Promise.all([p1, p2]).then(function () { eqA('Två identiska samtidiga förfrågningar → ett anrop', [e.calls.length, p1 === p2], [1, true]); }),
+    f.c.query('Q').then(null, function (er) { eqA('Ingen uppkoppling → avbryts direkt utan nya försök', [er.kind, f.calls.length], ['network', 1]); })
+  ]).then(function () {
+    var mem = {}, store = { get: function (k) { return mem[k] || null; }, set: function (k, v) { if (v.length > 400) throw new Error('quota'); mem[k] = v; } };
+    var cache = Net.createGeoCache(store, 'g', 3);
+    cache.put('way/1', { holes: { 1: 1 } }, '2026-10-01'); cache.put('way/2', { holes: {} }, '2026-10-02'); cache.put('way/3', {}, '2026-10-03'); cache.put('way/4', {}, '2026-10-04');
+    eqA('Cache: håller max 3 banor, äldsta släpps', [cache.size(), cache.get('way/1'), !!cache.get('way/4')], [3, null, true]);
+    var big = Net.createGeoCache(store, 'h', 10);
+    for (var i = 0; i < 8; i++) big.put('w' + i, { pad: 'xxxxxxxxxxxxxxxxxxxxxxxx' }, '2026-10-0' + i);
+    eqA('Cache: full lagring hanteras genom att släppa äldsta, ingen krasch', big.size() > 0 && big.size() < 8 && !!big.get('w7'), true);
+    return out;
+  });
+}
+if (typeof module !== 'undefined') module.exports.runAsyncNetTests = runAsyncNetTests;
 if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
-  var r = module.exports(require('./core.js'), require('./geo.js'), require('./games.js'), require('./stats.js'), require('./sync.js'), require('./ratings.js'));
+  var r = module.exports(require('./core.js'), require('./geo.js'), require('./games.js'), require('./stats.js'), require('./sync.js'), require('./ratings.js'), require('./net.js'));
   var failed = r.filter(function (x) { return !x.ok; });
   r.forEach(function (x) { console.log((x.ok ? 'OK   ' : 'FEL  ') + x.name + (x.ok ? '' : '  (fick ' + JSON.stringify(x.actual) + ', väntat ' + JSON.stringify(x.expected) + ')')); });
-  console.log('\n' + (r.length - failed.length) + ' av ' + r.length + ' tester godkända');
-  process.exit(failed.length ? 1 : 0);
+  runAsyncNetTests(require('./net.js')).then(function (ra) {
+    ra.forEach(function (x) { console.log((x.ok ? 'OK   ' : 'FEL  ') + x.name + (x.ok ? '' : '  (fick ' + JSON.stringify(x.actual) + ', väntat ' + JSON.stringify(x.expected) + ')')); });
+    var all = r.concat(ra), bad = all.filter(function (x) { return !x.ok; });
+    console.log('\n' + (all.length - bad.length) + ' av ' + all.length + ' tester godkända');
+    process.exit(bad.length ? 1 : 0);
+  });
 }

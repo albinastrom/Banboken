@@ -589,3 +589,37 @@ Object.assign(window.I18N.en, {
 /* Rubriker i meningsform (premiumdesign) */
 Object.assign(window.I18N.sv, { chooseGameType: 'Välj speltyp', courseCaps: 'Bana', pt_standard: 'Standardspel', pt_match: 'Matchspel', pt_team: 'Lagspel', pt_training: 'Träningsrond' });
 Object.assign(window.I18N.en, { chooseGameType: 'Choose game type', courseCaps: 'Course', pt_standard: 'Standard', pt_match: 'Match play', pt_team: 'Team game', pt_training: 'Practice round' });
+
+/* Robust hämtning av kartdata */
+Object.assign(window.I18N.sv, {
+  errNetwork: 'Ingen internetanslutning – kontrollera mobildata eller wifi.',
+  errTimeout: 'Kartservern svarade inte i tid, trots flera försök.',
+  errRate: 'Kartservern tar emot för många förfrågningar just nu. Vänta en minut och försök igen.',
+  errServer: 'OpenStreetMaps kartservrar är överbelastade just nu ({s}). Appen provade flera servrar.',
+  serverErrShort: 'serverfel', errClient: 'Förfrågan avvisades av kartservern ({s}).',
+  courseNotFound: 'Banan hittades inte i OpenStreetMap.', attemptN: 'Försök {n} av {m} – provar en annan kartserver…',
+  noHolesInOsm: 'OpenStreetMap har inga hål inlagda för den här banan. Du kan ändå spela: fortsätt utan karta och fyll i par och index.',
+  usingCache: 'Sparad kartdata används (hämtad {d}).', continueNoMap: 'Fortsätt utan karta',
+  continueNoMapHelp: 'Du för score som vanligt. GPS-avstånd stängs av tills kartdata kan hämtas – det går att göra senare från rondvyn.',
+  noMapFlash: 'Fyll i par och index från scorekortet och tryck Spara.',
+  posDenied: 'Platsåtkomst saknas, så närmaste bana kan inte visas. Sök på namn, eller tillåt plats: Inställningar → Integritet och säkerhet → Platstjänster → Safari-webbplatser.',
+  posTimeout: 'Positionen tog för lång tid att hitta. Försök igen, gärna utomhus.', posUnavailable: 'Ingen position just nu. Försök igen eller sök på namn.',
+  gpsOffNoMap: 'GPS-avstånd är avstängda – banan saknar kartdata.', scoreStillWorks: 'Score, puttar och statistik fungerar som vanligt.',
+  fetchMapNow: 'Hämta kartdata nu', geoLoaded: 'Kartdata hämtad – GPS-avstånd är på.'
+});
+Object.assign(window.I18N.en, {
+  errNetwork: 'No internet connection – check mobile data or wifi.',
+  errTimeout: 'The map server did not respond in time, despite several attempts.',
+  errRate: 'The map server is receiving too many requests right now. Wait a minute and try again.',
+  errServer: 'OpenStreetMap’s map servers are overloaded right now ({s}). The app tried several servers.',
+  serverErrShort: 'server error', errClient: 'The request was rejected by the map server ({s}).',
+  courseNotFound: 'The course was not found in OpenStreetMap.', attemptN: 'Attempt {n} of {m} – trying another map server…',
+  noHolesInOsm: 'OpenStreetMap has no holes mapped for this course. You can still play: continue without map and enter par and index.',
+  usingCache: 'Using saved map data (loaded {d}).', continueNoMap: 'Continue without map',
+  continueNoMapHelp: 'You keep score as usual. GPS distances are off until map data can be loaded – you can do that later from the round view.',
+  noMapFlash: 'Enter par and index from the scorecard and tap Save.',
+  posDenied: 'No location access, so the nearest course cannot be shown. Search by name, or allow location in Settings → Privacy & Security → Location Services → Safari Websites.',
+  posTimeout: 'Finding your position took too long. Try again, preferably outdoors.', posUnavailable: 'No position right now. Try again or search by name.',
+  gpsOffNoMap: 'GPS distances are off – the course has no map data.', scoreStillWorks: 'Score, putts and stats work as usual.',
+  fetchMapNow: 'Load map data now', geoLoaded: 'Map data loaded – GPS distances are on.'
+});
