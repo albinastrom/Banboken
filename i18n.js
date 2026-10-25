@@ -17,7 +17,7 @@ window.I18N = {
     handicapIndex: 'Handicapindex', courseHcp: 'Banhandicap', playingHcp: 'Spelhandicap', calc: 'Uträkning',
     demoWarning: 'DEMO – påhittade värden. Inte en riktig bana och räknas inte i din statistik.',
     unverified: 'Ej verifierad', verified: 'Verifierad', demo: 'Demo',
-    par: 'Par', si: 'Index', length: 'Längd', received: 'Hcp-slag', strokes: 'Slag', putts: 'Puttar',
+    par: 'Par', si: 'Index', length: 'Längd', received: 'Slag hcp', strokes: 'Slag', putts: 'Puttar',
     fairway: 'Fairway', left: 'Vänster', right: 'Höger', hit: 'Träff', gir: 'Green i regulation', girAuto: 'räknas automatiskt',
     yes: 'Ja', no: 'Nej', more: 'Mer statistik', penalties: 'Pliktslag', bunker: 'Bunkerslag',
     missedGreen: 'Missad green', short: 'Kort', long: 'Lång', pickUp: 'Stryk hålet', pickedUp: 'Struket',
@@ -571,3 +571,21 @@ Object.assign(window.I18N.en, {
   sharedPulled: '{n} ratings loaded.', sharedPushed: '{n} ratings published.', deleteRowConfirm: 'Delete this rating?',
   officialLocked: 'Official rating – changed only in Course administration.'
 });
+
+/* Premiumdesign */
+Object.assign(window.I18N.sv, {
+  playShort: 'Spela', toRoundShort: 'Till ronden', sinceDate: 'sedan', lastPlayed: 'Senast spelad', playAgain: 'Spela igen', strokesShort: 'slag',
+  yourDev: 'Din utveckling, senaste 10 ronderna', roundsPlayed: 'Spelade ronder', favorite: 'Favorit', favorites: 'Favoriter', recentCourses: 'Senast spelade', allCourses: 'Alla banor',
+  lastPlayedShort: 'senast', hcpDev: 'Handicapindex', hcpDevEmpty: 'Utvecklingen visas när du har uppdaterat ditt handicapindex några gånger under Profil.',
+  scoreDist: 'Resultat per hål', perRound: 'Snitt per rond', sd_eagle: 'Eagle+', sd_birdie: 'Birdie', sd_par: 'Par', sd_bogey: 'Bogey', sd_dbl: 'Dubbel+'
+});
+Object.assign(window.I18N.en, {
+  playShort: 'Play', toRoundShort: 'To round', sinceDate: 'since', lastPlayed: 'Last played', playAgain: 'Play again', strokesShort: 'strokes',
+  yourDev: 'Your progress, last 10 rounds', roundsPlayed: 'Rounds played', favorite: 'Favourite', favorites: 'Favourites', recentCourses: 'Recently played', allCourses: 'All courses',
+  lastPlayedShort: 'last', hcpDev: 'Handicap Index', hcpDevEmpty: 'Progress appears once you have updated your Handicap Index a few times under Profile.',
+  scoreDist: 'Score per hole', perRound: 'Average per round', sd_eagle: 'Eagle+', sd_birdie: 'Birdie', sd_par: 'Par', sd_bogey: 'Bogey', sd_dbl: 'Double+'
+});
+
+/* Rubriker i meningsform (premiumdesign) */
+Object.assign(window.I18N.sv, { chooseGameType: 'Välj speltyp', courseCaps: 'Bana', pt_standard: 'Standardspel', pt_match: 'Matchspel', pt_team: 'Lagspel', pt_training: 'Träningsrond' });
+Object.assign(window.I18N.en, { chooseGameType: 'Choose game type', courseCaps: 'Course', pt_standard: 'Standard', pt_match: 'Match play', pt_team: 'Team game', pt_training: 'Practice round' });

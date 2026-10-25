@@ -215,9 +215,9 @@
     else if (st === 'weak') h += '<span class="gps-st weak"><i class="dot weak"></i>' + esc(t('gpsLow')) + ' · ±' + acc + ' m</span>';
     else if (st === 'lost') h += '<span class="gps-st bad"><i class="dot bad"></i>' + esc(fmt(t('gpsLost'), { s: Math.round((gpsNow() - gps.pos.ts) / 1000) })) + '</span>';
     else if (st === 'searching') h += '<span class="gps-st"><i class="dot wait"></i>' + esc(t('gpsSearching')) + '</span>';
-    else if (st === 'denied') h += '<span class="gps-st bad">' + esc(t('gpsNoPermission')) + '</span><p class="note">' + esc(t('gpsDenied')) + '</p>';
+    else if (st === 'denied') h += '<span class="gps-st bad">' + esc(t('gpsNoPermission')) + '</span>';
     else if (st === 'unavailable') h += '<span class="gps-st bad">' + esc(t('gpsUnavailable')) + '</span> <button class="chip" data-act="gps-start">' + esc(t('retry')) + '</button>';
-    else if (st === 'off') h += '<button class="btn gold gps-go" data-act="gps-start">' + esc(t('gpsStart')) + '</button><p class="note">' + esc(t('gpsWhy')) + '</p>';
+    else if (st === 'off') h += '<button class="chip gps-go" data-act="gps-start">' + esc(t('gpsStart')) + '</button>';
     return h;
   }
 
@@ -226,7 +226,9 @@
   }
   function liveHtml(r, x) {
     var h = '', hole = x.hole, gi = greenInfo(hole, x.from), q = gpsQ(), stale = !x.fromTee && q === 'lost';
-    h += '<div class="dist3' + (stale ? ' stale' : '') + '">' + d3('frontEdge', gi.front) + d3('midGreen', gi.mid, !gi.exact, true) + d3('backEdge', gi.back) + '</div>';
+    var gst = gpsState();
+    if (gst === 'off') h += '<p class="note">' + esc(t('gpsWhy')) + '</p>';
+    if (gst === 'denied') h += '<p class="note">' + esc(t('gpsDenied')) + '</p>';
     if (stale) h += '<p class="warn">' + esc(t('distStale')) + '</p>';
     else if (!x.fromTee && q === 'weak') h += '<p class="note center">' + esc(fmt(t('distWeak'), { a: Math.round(gps.pos.acc) })) + '</p>';
     if (x.fromTee) h += '<p class="note center">' + esc(gps.pos ? t('fromTeeFar') : t('fromTee')) + '</p>';
@@ -286,27 +288,32 @@
   }
   function r0hole() { var r = activeRound(); return r ? holeNo(r, r.current) : ''; }
 
+  function mapButtons(x) {
+    var canFollow = !!gps.pos && !x.fromTee, zoomGreen = (view.mapZoom || 'hole') === 'hole';
+    return '<button class="mbtn' + (gps.mv.follow ? ' on' : '') + '" data-act="map-follow"' + (canFollow ? '' : ' disabled') + ' aria-label="' + esc(t('followMe')) + '" title="' + esc(t('followMe')) + '">' + ICON.follow + '</button>' +
+      '<button class="mbtn" data-act="map-center"' + (canFollow ? '' : ' disabled') + ' aria-label="' + esc(t('centerMe')) + '" title="' + esc(t('centerMe')) + '">' + ICON.center + '</button>' +
+      '<button class="mbtn' + (!zoomGreen ? ' on' : '') + '" data-act="zoom:' + (zoomGreen ? 'green' : 'hole') + '" aria-label="' + esc(zoomGreen ? t('zoomGreen') : t('zoomHole')) + '" title="' + esc(zoomGreen ? t('zoomGreen') : t('zoomHole')) + '">' + (zoomGreen ? ICON.green : ICON.hole) + '</button>' +
+      '<button class="mbtn' + (state.ui.sat ? ' on' : '') + '" data-act="sat-toggle" aria-label="' + esc(t('satellite')) + '" title="' + esc(t('satellite')) + '">' + ICON.layers + '</button>' +
+      (wakeSupported() ? '<button class="mbtn' + (state.ui.wakeLock ? ' on' : '') + '" data-act="wake" aria-label="' + esc(t('keepAwake')) + '" title="' + esc(t('keepAwake')) + '">' + ICON.sun + '</button>' : '');
+  }
   function gpsInner(r) {
     var x = holeCtx(r), h = '';
-    if (!x.g) return '<p class="note">' + esc(t('noGeo')) + '</p>' + (gps.test ? testPanel() : '');
-    h += '<div class="gps-top"><span id="gps-status">' + gpsStatusHtml() + '</span>' + (x.g.source === 'demo' ? '<em class="tag demo">' + esc(t('demoGeo')) + '</em>' : '<em class="tag">' + esc(t('osmUnverified')) + '</em>') + '</div>';
+    if (!x.g) return '<div class="gps-under"><p class="note">' + esc(t('noGeo')) + '</p></div>' + (gps.test ? testPanel() : '');
+    var showMap = state.ui.mapOpen && !!x.hole;
+    h += '<div class="mapwrap' + (showMap ? '' : ' nomap') + '">';
+    if (showMap) h += '<div id="gps-map">' + mapSvg(x.hole, x.gc) + '</div>';
+    h += '<div class="map-top"><span id="gps-status">' + gpsStatusHtml() + '</span>' + (x.g.source === 'demo' ? '<em class="tag demo">' + esc(t('demoGeo')) + '</em>' : '<em class="tag">OSM</em>') + '</div>';
+    if (showMap) h += '<div class="map-ctrl">' + mapButtons(x) + '</div>';
+    if (x.hole) h += '<div class="map-dist" id="gps-dist">' + distHtml(r, x) + '</div>';
+    h += '</div>';
     if (gps.test) h += testPanel();
-    if (gps.suggest !== null && gps.suggest !== r.current) h += '<button class="suggest" data-act="go:' + gps.suggest + '">' + esc(t('seemsOnHole')) + ' ' + (gps.suggest + 1) + ' – ' + esc(t('switch')) + '</button>';
-    if (!x.hole) return h + '<p class="warn">' + esc(t('holeNoCoords').replace('{n}', holeNo(r, r.current))) + '</p>';
+    if (gps.suggest !== null && gps.suggest !== r.current) h += '<button class="suggest" data-act="go:' + gps.suggest + '">' + esc(t('seemsOnHole')) + ' ' + holeNo(r, gps.suggest) + ' – ' + esc(t('switch')) + '</button>';
+    if (!x.hole) return h + '<div class="gps-under"><p class="warn">' + esc(t('holeNoCoords').replace('{n}', holeNo(r, r.current))) + '</p></div>';
     h += '<div id="gps-live">' + liveHtml(r, x) + '</div>';
     if (view.gregOpen) h += gregPanel(x);
-    h += '<div class="maptools"><button class="chip" data-act="map-toggle">' + esc(state.ui.mapOpen ? t('hideMap') : t('showMap')) + '</button>';
-    if (state.ui.mapOpen) {
-      var canFollow = !!gps.pos && !x.fromTee;
-      h += '<button class="chip' + (gps.mv.follow ? ' on' : '') + '" data-act="map-follow"' + (canFollow ? '' : ' disabled') + '>' + esc(t('followMe')) + '</button>' +
-        '<button class="chip" data-act="map-center"' + (canFollow ? '' : ' disabled') + '>' + esc(t('centerMe')) + '</button>' +
-        '<button class="chip' + (!gps.mv.follow && (view.mapZoom || 'hole') === 'hole' ? ' on' : '') + '" data-act="zoom:hole">' + esc(t('zoomHole')) + '</button>' +
-        '<button class="chip' + (!gps.mv.follow && view.mapZoom === 'green' ? ' on' : '') + '" data-act="zoom:green">' + esc(t('zoomGreen')) + '</button>';
-      if (wakeSupported()) h += '<button class="chip' + (state.ui.wakeLock ? ' on' : '') + '" data-act="wake">' + esc(t('keepAwake')) + '</button>';
-      if (x.g.source === 'demo' && !gps.test) h += '<button class="chip" data-act="test-on">' + esc(t('simOn')) + '</button>';
-    }
-    h += '</div>';
-    if (state.ui.mapOpen) h += '<div id="gps-map">' + mapSvg(x.hole, x.gc) + '</div><p class="note">' + esc(view.gregTap ? t('regTapHint') : gps.test ? t('simTap') : t('tapHint')) + '</p>';
+    h += '<div class="maplinks"><button class="link" data-act="map-toggle">' + esc(state.ui.mapOpen ? t('hideMap') : t('showMap')) + '</button>' +
+      (x.g.source === 'demo' && !gps.test ? '<button class="link" data-act="test-on">' + esc(t('simOn')) + '</button>' : '') + '</div>';
+    if (showMap) h += '<p class="note gps-under">' + esc(view.gregTap ? t('regTapHint') : gps.test ? t('simTap') : t('tapHint')) + '</p>';
     return h;
   }
 
@@ -321,6 +328,12 @@
     }
     var st = document.getElementById('gps-status'); if (st) st.innerHTML = gpsStatusHtml();
     var lv = document.getElementById('gps-live'); if (lv && x.hole) lv.innerHTML = liveHtml(r, x);
+    var dp = document.getElementById('gps-dist');
+    if (dp && x.hole) {
+      var prev = dp.querySelector('.mid b'), before = prev ? prev.textContent : null;
+      dp.innerHTML = distHtml(r, x);
+      var now = dp.querySelector('.mid b'); if (now && before !== null && now.textContent !== before) dp.querySelectorAll('b').forEach(function (b) { b.classList.add('tick'); });
+    }
     updateMapDynamic(true);
     gps.lastRender = Date.now();
   }
@@ -331,7 +344,7 @@
   }
   // ---------- Karta ----------
   function mapSvg(hole, gc) {
-    var W = 360, H = 470, pad = 26, P = G.proj(gc), mode = view.mapZoom || 'hole', pts = [];
+    var W = 360, H = 470, padL = 22, padR = 62, padT = 48, padB = 122, P = G.proj(gc), mode = view.mapZoom || 'hole', pts = [];
     function add(poly) { poly.forEach(function (p) { pts.push(P.xy(p)); }); }
     var tee = teePoint(hole), cxy = P.xy(gc);
     if (mode === 'green') {
@@ -347,8 +360,8 @@
     function rot(q) { return [q[0] * u[1] - q[1] * u[0], q[0] * u[0] + q[1] * u[1]]; }
     var rp = pts.map(rot), xs = rp.map(function (q) { return q[0]; }), ys = rp.map(function (q) { return q[1]; });
     var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs), minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
-    var s = Math.min((W - 2 * pad) / Math.max(20, maxX - minX), (H - 2 * pad) / Math.max(20, maxY - minY), 8);
-    var ox = W / 2 - s * (minX + maxX) / 2, oy = H / 2 + s * (minY + maxY) / 2;
+    var s = Math.min((W - padL - padR) / Math.max(20, maxX - minX), (H - padT - padB) / Math.max(20, maxY - minY), 8);
+    var ox = (padL + W - padR) / 2 - s * (minX + maxX) / 2, oy = (padT + H - padB) / 2 + s * (minY + maxY) / 2;
     function toSvg(ll) { var r = rot(P.xy(ll)); return [s * r[0] + ox, -s * r[1] + oy]; }
     function fromSvg(sp) { var r0 = (sp[0] - ox) / s, r1 = -(sp[1] - oy) / s; return P.ll([u[1] * r0 + u[0] * r1, -u[0] * r0 + u[1] * r1]); }
     mapCtx = { toSvg: toSvg, fromSvg: fromSvg, W: W, H: H, s: s, hole: hole, gc: gc, gcSvg: toSvg(gc) };
@@ -400,8 +413,8 @@
   function show(el, on) { if (el) el.style.display = on ? '' : 'none'; }
   function followTransform(me) {
     var P = mapCtx.toSvg(me), G0 = mapCtx.gcSvg, d = Math.sqrt(Math.pow(P[0] - G0[0], 2) + Math.pow(P[1] - G0[1], 2));
-    var k = Math.max(1, Math.min(5, (mapCtx.H * 0.5) / Math.max(1, d)));
-    return { k: k, tx: mapCtx.W / 2 - k * P[0], ty: mapCtx.H * 0.8 - k * P[1] };
+    var k = Math.max(1, Math.min(5, (mapCtx.H * 0.4) / Math.max(1, d)));
+    return { k: k, tx: (mapCtx.W - 40) / 2 - k * P[0], ty: mapCtx.H * 0.68 - k * P[1] };
   }
   function applyMapTransform(anim) {
     var g = document.getElementById('m-view'); if (!g) return;
@@ -1635,7 +1648,7 @@
     var tabs = [['home', 'navHome', 'M4 11l8-7 8 7v9h-5v-6H9v6H4z'], ['courses', 'navCourses', 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14'], null,
       ['stats', 'navStats', 'M5 20V11M12 20V5M19 20v-7'], ['profile', 'navProfile', 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1-4 4-6 8-6s7 2 8 6']];
     return '<nav class="tabs five">' + tabs.map(function (x) {
-      if (!x) return '<div class="playslot"><button class="playbtn' + (onPlay ? ' on' : '') + (ar ? ' live' : '') + '" data-act="' + (ar ? 'tab:round' : 'play') + '"><span>' + (ar ? esc(t('toRound1')) + '<br>' + esc(t('toRound2')) : esc(t('playGolf1')) + '<br>' + esc(t('playGolf2'))) + '</span></button></div>';
+      if (!x) return '<div class="playslot"><button class="playbtn' + (onPlay ? ' on' : '') + (ar ? ' live' : '') + '" data-act="' + (ar ? 'tab:round' : 'play') + '"><span>' + (ar ? esc(t('toRoundShort')) : esc(t('playShort'))) + '</span></button></div>';
       var on = view.tab === x[0];
       return '<button data-act="tab:' + x[0] + '" class="' + (on ? 'on' : '') + '"' + (on ? ' aria-current="page"' : '') + '><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + x[2] + '"/></svg><span>' + esc(t(x[1])) + '</span></button>';
     }).join('') + '</nav>';
@@ -1707,7 +1720,7 @@
       if (sameArea.length) h += '<h3>' + esc(t('sameArea')) + '</h3><div class="chips">' + sameArea.map(function (c) { return '<button class="chip" data-act="pcourse-to:' + esc(c.id) + '">' + esc(c.name) + '</button>'; }).join('') + '</div>';
     }
     if (cur && cur.kind === 'saved') {
-      h += '<h3>' + esc(t('chooseTee')) + '</h3><div class="choices">' + cur.course.tees.map(function (te, i) {
+      h += '<h3>' + esc(t('chooseTee')) + '</h3>' + teeRows(cur.course, playerGender(), '18', pl.teeId || cur.course.tees[0].id, 'ptee') + '<div hidden>' + [].map(function (te, i) {
         var on = (pl.teeId || cur.course.tees[0].id) === te.id;
         return '<button class="choice' + (on ? ' on' : '') + '" data-act="ptee:' + te.id + '"><strong>' + esc(te.name) + (te.color ? ' <small>' + esc(te.color) + '</small>' : '') + '</strong><small>' + esc(ratingLine(te, playerGender(), '18')) + ' · Par ' + C.sumPar(te.holes) + '</small>' + ratingBadge(te, playerGender(), '18') + '</button>';
       }).join('') + '</div>';
@@ -2024,6 +2037,154 @@
     var aEl = document.createElement('a'); aEl.href = URL.createObjectURL(blob); aEl.download = name; document.body.appendChild(aEl); aEl.click(); aEl.remove();
   }
 
+  // ======================= PREMIUMDESIGN: VYER =======================
+  // Höjdkurvor (som på en banguide) – egen illustration, ritas en gång.
+  var CONTOURS = (function () {
+    var paths = '';
+    for (var k = 0; k < 9; k++) {
+      var y = 40 + k * 34, a = 14 + k * 3, d = 'M-20 ' + y;
+      for (var x = 0; x <= 440; x += 40) d += ' Q' + (x + 20) + ' ' + (y + (((x / 40 + k) % 2) ? a : -a)) + ' ' + (x + 40) + ' ' + y;
+      paths += '<path d="' + d + '"/>';
+    }
+    return '<svg class="contours" viewBox="0 0 400 360" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g fill="none" stroke="#C9A65A" stroke-opacity=".22" stroke-width="1">' + paths +
+      '<ellipse cx="318" cy="92" rx="54" ry="34"/><ellipse cx="318" cy="92" rx="34" ry="20"/><ellipse cx="318" cy="92" rx="15" ry="8"/></g></svg>';
+  })();
+  function sparkSvg(vals, w, h) {
+    var pts = vals.filter(function (v) { return v !== null && v !== undefined; });
+    if (pts.length < 2) return '';
+    w = w || 300; h = h || 56;
+    var min = Math.min.apply(null, pts), max = Math.max.apply(null, pts); if (max - min < 1) { max += .5; min -= .5; }
+    var step = (w - 8) / (pts.length - 1);
+    var xy = pts.map(function (v, i) { return [4 + i * step, h - 6 - (v - min) / (max - min) * (h - 14)]; });
+    var line = xy.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ');
+    var last = xy[xy.length - 1];
+    return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true"><polygon class="ar" points="4,' + h + ' ' + line + ' ' + (w - 4) + ',' + h + '"/><polyline class="ln" points="' + line + '"/><circle class="dt" cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="3.5"/></svg>';
+  }
+  function hiDelta() {
+    var hh = state.profile.hiHistory || [];
+    if (hh.length < 2) return null;
+    var first = hh[0], last = hh[hh.length - 1];
+    return { d: Math.round((last.hi - first.hi) * 10) / 10, since: first.d };
+  }
+
+  function viewHome3() {
+    var p = state.profile, first = (p.name || '').split(' ')[0], ar = activeRound(), h = '';
+    h += '<header class="home3">' + CONTOURS + '<div class="h3-top"><button class="h3-av" data-act="tab:profile" aria-label="' + esc(t('navProfile')) + '">' + esc(initials(p.name)) + '</button><span class="h3-brand">Banboken</span></div>';
+    h += '<h1 class="h3-greet">' + esc(greeting()) + (first ? ', ' + esc(first) : '') + '</h1>';
+    if (p.hi !== null) {
+      var dl = hiDelta();
+      h += '<div class="h3-hcp"><b>' + esc(C.formatHandicap(p.hi)) + '</b><span>' + esc(t('handicapIndex')) + (dl && dl.d ? '<em>' + (dl.d < 0 ? '−' : '+') + esc(dec(Math.abs(dl.d))) + ' ' + esc(t('sinceDate')) + ' ' + esc(fmtDate(dl.since)) + '</em>' : '') + '</span></div>';
+    }
+    h += '<div class="h3-cta">' + (ar
+      ? '<button class="btn lux big" data-act="tab:round">' + esc(t('resumeRound')) + ' · ' + esc(t('hole')) + ' ' + holeNo(ar, ar.current) + '</button>'
+      : '<button class="btn lux big" data-act="play">' + esc(t('startRound')) + '</button>') + '</div></header>';
+    h += '<main class="page home">';
+    if (!profileReady()) h += '<section class="card"><p class="title">' + esc(t('welcomeTitle')) + '</p><p class="sub">' + esc(t('welcomeText')) + '</p><div class="actions"><button class="btn gold" data-act="tab:profile">' + esc(t('startHere')) + '</button></div></section>';
+    if (ar) {
+      var as = C.summarizeRound(ar, ar.tee);
+      h += '<button class="live-card" data-act="tab:round"><span><small>' + esc(t('ongoing')) + '</small><b>' + esc(ar.courseName) + '</b><small>' + esc(t('hole')) + ' ' + holeNo(ar, ar.current) + ' · ' + esc(t('resumeRound')) + '</small></span><strong>' + (as.played ? signed(as.toPar) : '–') + '</strong></button>';
+    }
+    var done = doneRounds(), own = done.filter(function (r) { return r.mode !== 'team' && !r.shared; });
+    if (done.length) {
+      var lr = done[0], lc = courseById(lr.courseId), ls = metricsOf(lr).s;
+      h += '<section class="card"><h3>' + esc(t('lastPlayed')) + '</h3><p class="title">' + esc(lr.courseName) + '</p><p class="sub">' + esc(fmtDate(lr.date)) + ' · ' + esc(lr.tee.name) +
+        (lr.mode === 'team' ? '' : ' · ' + ls.gross + ' ' + esc(t('strokesShort')) + ' · ' + ls.points + ' p') + '</p><div class="actions">' +
+        (lc && !ar ? '<button class="btn gold" data-act="play-again:' + lc.id + '">' + esc(t('playAgain')) + '</button>' : '') +
+        '<button class="btn ghost" data-act="round:' + lr.id + '">' + esc(t('toScorecard')) + '</button></div></section>';
+    }
+    if (own.length >= 2) {
+      var ms = own.slice(0, 10).map(metricsOf), pts = ms.filter(function (m) { return !m.s.nine; }).map(function (m) { return m.s.points; }).reverse();
+      var a = C.aggregate(ms.map(function (m) { return m.s; }), 10);
+      h += '<button class="card devcard" data-act="tab:stats" style="display:block;width:100%;text-align:left;border:0"><h3>' + esc(t('yourDev')) + '</h3>' + sparkSvg(pts) +
+        '<div class="dev"><div><b>' + dec(a.avgPoints) + '</b><small>' + esc(t('avgPoints')) + '</small></div><div><b>' + dec(a.avgGross) + '</b><small>' + esc(t('avgScore')) + '</small></div><div><b>' + own.length + '</b><small>' + esc(t('roundsPlayed')) + '</small></div></div></button>';
+    }
+    h += '<div class="sec-h"><h2>' + esc(t('roundsTitle')) + '</h2>' + (done.length ? '<button class="link" data-act="tab:stats">' + esc(t('showAllShort')) + '</button>' : '') + '</div>';
+    if (!done.length) h += '<div class="rcard empty"><p>' + esc(t('firstRoundHint')) + '</p></div>';
+    else h += '<div class="rcards">' + done.slice(0, 10).map(function (r) {
+      var big = r.mode === 'team' ? t('teamShort') : (function () { var s = metricsOf(r).s; return s.played ? signed(s.toPar) : '–'; })();
+      return '<button class="rcard" data-act="round:' + r.id + '"><b>' + esc(r.courseName) + '</b><small>' + esc(fmtDate(r.date)) + '</small><small>' + esc(r.nine ? t('hm_' + r.nine) : (r.games && r.games.length ? r.games.map(function (g) { return t('g_' + g.type); }).join(', ') : t(r.format === 'stroke' ? 'strokePlay' : 'stableford'))) + '</small><strong>' + esc(big) + '</strong></button>';
+    }).join('') + '</div>';
+    h += weatherBlock(homeWeatherCourse());
+    return h + '</main>';
+  }
+
+  // Ikoner för kartknapparna (egna, tunna linjer)
+  var ICON = {
+    follow: '<svg viewBox="0 0 24 24"><path d="M12 3l7 18-7-4-7 4z"/></svg>',
+    center: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>',
+    green: '<svg viewBox="0 0 24 24"><path d="M6 21V4"/><path d="M6 4l10 3.5L6 11"/><ellipse cx="12" cy="20" rx="8" ry="2"/></svg>',
+    hole: '<svg viewBox="0 0 24 24"><path d="M7 21c0-6 10-6 10-12V3"/><path d="M17 3l4 1.5-4 1.5"/><circle cx="7" cy="21" r="1"/></svg>',
+    layers: '<svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
+    sun: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
+  };
+  function distHtml(r, x) {
+    var gi = greenInfo(x.hole, x.from), stale = !x.fromTee && gpsQ() === 'lost';
+    return '<div class="plate dist3' + (stale ? ' stale' : '') + '">' + d3('frontEdge', gi.front) + d3('midGreen', gi.mid, !gi.exact, true) + d3('backEdge', gi.back) + '</div>';
+  }
+  var TEE_COLORS = { gul: '#E2B33C', yellow: '#E2B33C', rod: '#B83A2E', red: '#B83A2E', bla: '#2F64A8', blue: '#2F64A8', vit: '#F4F2EC', white: '#F4F2EC', svart: '#222', black: '#222', gron: '#2E7D4F', green: '#2E7D4F', orange: '#E07B2A', guld: '#C9A65A', gold: '#C9A65A', silver: '#B9BDBF', lila: '#7B4FA0' };
+  function teeColor(te) {
+    var keys = [te.color, te.name].map(function (v) { return RT.fold(v); });
+    for (var i = 0; i < keys.length; i++) for (var k in TEE_COLORS) if (keys[i] && keys[i].indexOf(k) >= 0) return TEE_COLORS[k];
+    return 'var(--line-strong)';
+  }
+  function teeRows(c, gender, mode, selId, act) {
+    return '<div class="teepick">' + c.tees.map(function (te) {
+      var r = gender ? RT.ratingFor(te, gender, mode) : (te.ratings ? null : RT.ratingFor(te, null, mode)), len = teeLength(te, mode);
+      var par = C.sumPar(mode === '18' ? te.holes : mode === 'front9' ? te.holes.slice(0, 9) : te.holes.slice(9, 18));
+      return '<button class="teerow choice' + (selId === te.id ? ' on' : '') + '" data-act="' + act + ':' + te.id + '"><span class="teedot" style="background:' + teeColor(te) + '"></span><strong>' + esc(te.name) + (te.color && RT.fold(te.color) !== RT.fold(te.name) ? ' <small>' + esc(te.color) + '</small>' : '') + '</strong>' + ratingBadge(te, gender, mode) +
+        '<span class="tmeta">' + (len ? '<span><b>' + len + '</b> m</span>' : '') + '<span>Par <b>' + par + '</b></span>' +
+        (r ? '<span>CR <b>' + dec(r.cr) + '</b></span><span>Slope <b>' + r.slope + '</b></span>' : '<span>' + esc(!gender && te.ratings ? t('chooseGenderShort') : fmt(t('noRatingFor'), { g: gender ? genderName(gender).toLowerCase() : '', h: t('hm_' + mode).toLowerCase() })) + '</span>') + '</span></button>';
+    }).join('') + '</div>';
+  }
+  function courseList(s) {
+    var q = RT.fold(view.setupQ || ''), fav = state.favCourses || [], last = {};
+    state.rounds.forEach(function (r) { if (!last[r.courseId] || r.date > last[r.courseId]) last[r.courseId] = r.date; });
+    var list = state.courses.filter(function (c) { return !q || RT.fold(c.name + ' ' + (c.club || '')).indexOf(q) >= 0; });
+    function card(c) {
+      var isFav = fav.indexOf(c.id) >= 0;
+      return '<div class="ccard' + (s.courseId === c.id ? ' on' : '') + '" data-act="pick-course:' + c.id + '" role="button" tabindex="0"><b>' + esc(c.name) + '</b>' +
+        '<button class="star' + (isFav ? ' on' : '') + '" data-act="fav:' + c.id + '" aria-label="' + esc(t('favorite')) + '" aria-pressed="' + isFav + '">' + (isFav ? '★' : '☆') + '</button>' +
+        '<small>' + esc([c.club, c.tees.length + ' tee', last[c.id] ? t('lastPlayedShort') + ' ' + fmtDate(last[c.id]) : ''].filter(Boolean).join(' · ')) + '</small><span class="tags">' + badge(c) + '</span></div>';
+    }
+    var favs = list.filter(function (c) { return fav.indexOf(c.id) >= 0; });
+    var recent = list.filter(function (c) { return fav.indexOf(c.id) < 0 && last[c.id]; }).sort(function (a, b) { return last[b.id] < last[a.id] ? -1 : 1; }).slice(0, 5);
+    var rest = list.filter(function (c) { return favs.indexOf(c) < 0 && recent.indexOf(c) < 0; }).sort(function (a, b) { return a.name.localeCompare(b.name, 'sv'); });
+    var h = '';
+    if (favs.length) h += '<p class="grp-h">' + esc(t('favorites')) + '</p>' + favs.map(card).join('');
+    if (recent.length) h += '<p class="grp-h">' + esc(t('recentCourses')) + '</p>' + recent.map(card).join('');
+    if (rest.length) h += '<p class="grp-h">' + esc(favs.length || recent.length ? t('allCourses') : t('chooseCourse')) + '</p>' + rest.map(card).join('');
+    return h || '<p class="muted">' + esc(t('noResults')) + '</p>';
+  }
+  function scoreDist(rounds) {
+    var c = { eagle: 0, birdie: 0, par: 0, bogey: 0, dbl: 0 }, n = 0;
+    rounds.forEach(function (r) {
+      if (r.mode === 'team') return;
+      r.tee.holes.forEach(function (h, i) {
+        var d = r.holes[i] || {}; if (typeof d.strokes !== 'number' || d.pickedUp) return;
+        var x = d.strokes - h.par; n++;
+        if (x <= -2) c.eagle++; else if (x === -1) c.birdie++; else if (x === 0) c.par++; else if (x === 1) c.bogey++; else c.dbl++;
+      });
+    });
+    return { c: c, n: n };
+  }
+  function statsDash(rounds, n) {
+    var own = rounds.filter(function (r) { return r.mode !== 'team' && !r.shared; }), list = own.slice(0, n), ms = list.map(metricsOf);
+    var a = C.aggregate(ms.map(function (m) { return m.s; }), n), hh = state.profile.hiHistory || [], h = '<div class="dash">';
+    h += '<div class="tile hero"><small>' + esc(t('hcpDev')) + '</small><b>' + esc(state.profile.hi === null ? '–' : C.formatHandicap(state.profile.hi)) + '</b>' +
+      (hh.length >= 2 ? sparkSvg(hh.slice(-20).map(function (x) { return x.hi; })) : '<small>' + esc(t('hcpDevEmpty')) + '</small>') + '</div>';
+    h += '<div class="tile"><small>' + esc(t('roundsPlayed')) + '</small><b>' + own.length + '</b></div>' +
+      '<div class="tile"><small>' + esc(t('avgScore')) + '</small><b>' + dec(a.avgGross) + '</b></div>' +
+      '<div class="tile"><small>' + esc(t('avgPoints')) + '</small><b>' + dec(a.avgPoints) + '</b></div>' +
+      '<div class="tile"><small>' + esc(t('avgPutts')) + '</small><b>' + dec(a.avgPutts) + '</b></div></div>';
+    var sd = scoreDist(list);
+    if (sd.n) {
+      var keys = ['eagle', 'birdie', 'par', 'bogey', 'dbl'];
+      h += '<section class="card"><h3>' + esc(t('scoreDist')) + '</h3><div class="distbar">' + keys.map(function (k) { return '<i class="dl-' + k + '" style="width:' + (sd.c[k] / sd.n * 100).toFixed(1) + '%"></i>'; }).join('') + '</div>' +
+        '<div class="distleg">' + keys.map(function (k) { return '<span><b>' + dec(sd.c[k] / Math.max(1, list.length), 1) + '</b>' + esc(t('sd_' + k)) + '</span>'; }).join('') + '</div><p class="note">' + esc(t('perRound')) + '</p></section>';
+    }
+    return h;
+  }
+
   var state = load();
   var storageOk = true;
   function saveLocalOnly() {
@@ -2211,8 +2372,8 @@
       if (s.playType === 'match' && !(s.extra || []).length) h += '<p class="note">' + esc(t('matchNeedsPlayers')) + '</p>';
       if (s.training) h += '<p class="note">' + esc(t('trainingNote')) + '</p>';
     } else {
-    h += '<section class="block"><h3>' + esc(t('chooseCourse')) + '</h3><div class="choices">';
-    state.courses.forEach(function (c) {
+    h += '<section class="block"><h3>' + esc(t('chooseCourse')) + '</h3><div class="coursefind"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input data-field="setup.q" value="' + esc(view.setupQ || '') + '" placeholder="' + esc(t('searchCourses')) + '" autocorrect="off"></div><div id="setup-courses">' + courseList(s) + '</div><div class="choices" hidden>';
+    [].forEach(function (c) {
       h += '<button class="choice' + (s.courseId === c.id ? ' on' : '') + '" data-act="pick-course:' + c.id + '"><strong>' + esc(c.name) + '</strong><small>' + esc(c.club || '') + '</small>' + badge(c) + '</button>';
     });
     h += '</div>';
@@ -2223,11 +2384,10 @@
       if (c.demo) h += '<p class="warn">' + esc(t('demoWarning')) + '</p>';
       var gender = playerGender(), mode = s.holesMode || '18';
       if (!gender) h += '<section class="block"><h3>' + esc(t('ratingGender')) + '</h3><p class="note">' + esc(t('genderWhy')) + '</p><div class="seg">' + ['men', 'women'].map(function (g) { return '<button data-act="p-gender:' + g + '">' + esc(genderName(g)) + '</button>'; }).join('') + '</div></section>';
-      h += '<section class="block"><h3>' + esc(t('chooseTee')) + '</h3><div class="choices">';
-      c.tees.forEach(function (te) {
-        h += '<button class="choice' + (s.teeId === te.id ? ' on' : '') + '" data-act="pick-tee:' + te.id + '"><strong>' + esc(te.name) + (te.color ? ' <small>' + esc(te.color) + '</small>' : '') + '</strong><small>' + esc(ratingLine(te, gender, mode)) + ' · Par ' + C.sumPar(mode === '18' ? te.holes : mode === 'front9' ? te.holes.slice(0, 9) : te.holes.slice(9, 18)) + '</small>' + ratingBadge(te, gender, mode) + '</button>';
+      h += '<section class="block"><h3>' + esc(t('chooseTee')) + '</h3><div hidden>';
+      [].forEach(function (te) {
       });
-      h += '</div></section>';
+      h += '</div>' + teeRows(c, gender, mode, s.teeId, 'pick-tee') + '</section>';
       var te = s.teeId && c.tees.filter(function (x) { return x.id === s.teeId; })[0];
       if (te) {
         var allowance = s.allowance || state.profile.allowance;
@@ -2292,10 +2452,11 @@
 
   function holeView(r, s) {
     var i = r.current, hole = r.tee.holes[i], d = r.holes[i], rec = s.allocation[i];
-    var h = '<section class="hole-head"><div class="hole-no"><small>' + esc(t('hole')) + '</small><span>' + holeNo(r, i) + '</span></div>' +
+    var h = '<section class="hole-head"><button class="navbtn" data-act="go:' + (i - 1) + '"' + (i === 0 ? ' disabled' : '') + ' aria-label="' + esc(t('prev')) + '">‹</button><div class="hole-no"><small>' + esc(t('hole')) + '</small><span>' + holeNo(r, i) + '</span></div>' +
       '<dl><div><dt>' + esc(t('par')) + '</dt><dd>' + hole.par + '</dd></div><div><dt>' + esc(t('si')) + '</dt><dd>' + hole.si + '</dd></div>' +
       '<div><dt>' + esc(t('length')) + '</dt><dd>' + (hole.length ? hole.length + ' m' : '–') + '</dd></div>' +
-      '<div><dt>' + esc(t('received')) + '</dt><dd>' + (rec > 0 ? '+' + rec : rec) + '</dd></div></dl></section>';
+      '<div><dt>' + esc(t('received')) + '</dt><dd>' + (rec > 0 ? '+' + rec : rec) + '</dd></div></dl>' +
+      '<button class="navbtn" data-act="go:' + (i + 1) + '"' + (i >= r.tee.holes.length - 1 ? ' disabled' : '') + ' aria-label="' + esc(t('next')) + '">›</button></section>';
     h += '<section id="gps-box" class="gps">' + gpsInner(r) + '</section>';
 
     if (r.mode === 'team') { h += teamEntries(r); } else {
@@ -2307,14 +2468,14 @@
     h += '<section class="entry"><h3>' + esc(t('strokes')) + '</h3><div class="pick strokes">';
     for (var v = lo; v <= hi; v++) {
       var cls = v - hole.par;
-      h += '<button class="' + (cur === v && !d.pickedUp ? 'on ' : '') + (cls < 0 ? 'under' : cls === 0 ? 'par' : 'over') + '" data-act="strokes:' + v + '">' + v + '</button>';
+      h += '<button class="' + (cur === v && !d.pickedUp ? 'on ' + (view.justSet === 'strokes:' + v ? 'pop ' : '') : '') + (cls < 0 ? 'under' : cls === 0 ? 'par' : 'over') + '" data-act="strokes:' + v + '">' + v + '</button>';
     }
     h += '<button class="more" data-act="strokes:' + ((typeof cur === 'number' ? Math.max(cur, hi) : hi) + 1) + '" aria-label="+1">+</button></div>' +
       '<button class="link' + (d.pickedUp ? ' on' : '') + '" data-act="pickup">' + esc(d.pickedUp ? t('pickedUp') + ' ✓' : t('pickUp')) + '</button></section>';
 
     // Puttar
     h += '<section class="entry"><h3>' + esc(t('putts')) + '</h3><div class="pick">';
-    [0, 1, 2, 3, 4].forEach(function (p) { h += '<button class="' + (d.putts === p ? 'on' : '') + '" data-act="putts:' + p + '">' + p + (p === 4 ? '+' : '') + '</button>'; });
+    [0, 1, 2, 3, 4].forEach(function (p) { h += '<button class="' + (d.putts === p ? 'on' + (view.justSet === 'putts:' + p ? ' pop' : '') : '') + '" data-act="putts:' + p + '">' + p + (p === 4 ? '+' : '') + '</button>'; });
     h += '</div></section>';
 
     // Fairway (par 4 och 5)
@@ -2480,12 +2641,12 @@
     var rounds = doneRounds(), sums = rounds.filter(function (r) { return r.mode !== 'team' && !r.shared; }).map(function (r) { return metricsOf(r).s; });
     var n = state.ui.statsN, a = C.aggregate(sums, n);
     var h = header(t('stats')) + '<main class="page">';
+    if (rounds.length) h += statsDash(rounds, n);
     h += '<h3 class="seg-h">' + esc(t('lastN')) + ' … ' + esc(t('rounds')) + '</h3><div class="seg">' + [5, 10, 20, 50].map(function (x) { return '<button class="' + (n === x ? 'on' : '') + '" data-act="statsn:' + x + '">' + x + '</button>'; }).join('') + '</div>';
     if (!rounds.length) {
       h += '<p class="muted">' + esc(t('noRounds')) + '</p>';
     } else {
-      h += '<dl class="kpis">' + kpi(t('avgScore'), dec(a.avgGross)) + kpi(t('avgPoints'), dec(a.avgPoints)) + kpi(t('avgPutts'), dec(a.avgPutts)) +
-        kpi(t('firPct'), a.firPct === null ? '–' : Math.round(a.firPct) + ' %') + kpi(t('girPct'), a.girPct === null ? '–' : Math.round(a.girPct) + ' %') + kpi(t('avgPen'), dec(a.avgPen)) + '</dl>';
+      h += '<dl class="kpis">' + kpi(t('firPct'), a.firPct === null ? '–' : Math.round(a.firPct) + ' %') + kpi(t('girPct'), a.girPct === null ? '–' : Math.round(a.girPct) + ' %') + kpi(t('avgPen'), dec(a.avgPen)) + '</dl>';
       h += '<p class="note">' + esc(a.rounds) + ' ' + esc(t('rounds')) + '</p>';
       var ownR = rounds.filter(function (r) { return r.mode !== 'team' && !r.shared; });
       h += statsExtra(ownR, n) + sgSection(ownR);
@@ -2556,14 +2717,17 @@
     if (view.tab === 'live' && live.viewer) body = viewLive();
     else if (view.tab === 'shared' && view.shared) body = viewShared();
     else if (view.tab === 'play' && view.play) body = viewPlay();
-    else if (view.tab === 'home') body = view.sub === 'setup' ? viewSetup() : viewHome2();
+    else if (view.tab === 'home') body = view.sub === 'setup' ? viewSetup() : viewHome3();
     else if (view.tab === 'round') body = view.sub === 'setup' ? viewSetup() : viewRound();
     else if (view.tab === 'courses') body = view.sub === 'edit' ? viewCourseEdit() : viewCourses();
     else if (view.tab === 'stats') body = viewStats();
     else body = view.sub === 'setup' ? viewSetup() : view.sub === 'admin' ? viewAdmin() : viewProfile();
     var warn = storageOk ? '' : '<p class="warn tight">Lagringen är full eller blockerad – exportera dina data.</p>';
     appEl.className = view.tab === 'play' ? 'playmode' : '';
+    var vkey = view.tab + ':' + (view.sub || '') + ':' + (view.holeMode || '');
+    var entering = vkey !== view.lastVkey; view.lastVkey = vkey;
     appEl.innerHTML = body + warn + flash() + (view.tab === 'play' ? '' : nav2());
+    if (entering) { var mn = appEl.querySelector('main'); if (mn) mn.classList.add('enter'); }
     manageTimers();
     var inPlay = view.tab === 'round' && !view.sub && activeRound() && view.holeMode === 'hole';
     if (inPlay) {
@@ -2619,9 +2783,9 @@
         if (view.setup.training) state.ui.shotLog = true;
         gps.target = null; gps.suggest = null; gps.lastAuto = null; save(); view.tab = 'round'; view.sub = null; view.holeMode = 'hole'; window.scrollTo(0, 0); break;
       }
-      case 'strokes': updateHole(function (d) { d.strokes = +v; d.pickedUp = false; if (typeof d.putts === 'number' && d.putts > d.strokes) d.putts = d.strokes; }); return;
+      case 'strokes': view.justSet = act; setTimeout(function () { view.justSet = null; }, 300); updateHole(function (d) { d.strokes = +v; d.pickedUp = false; if (typeof d.putts === 'number' && d.putts > d.strokes) d.putts = d.strokes; }); return;
       case 'pickup': updateHole(function (d) { d.pickedUp = !d.pickedUp; if (d.pickedUp) delete d.strokes; }); return;
-      case 'putts': updateHole(function (d) { d.putts = +v; if (typeof d.strokes === 'number' && d.strokes < d.putts) d.strokes = d.putts; }); return;
+      case 'putts': view.justSet = act; setTimeout(function () { view.justSet = null; }, 300); updateHole(function (d) { d.putts = +v; if (typeof d.strokes === 'number' && d.strokes < d.putts) d.strokes = d.putts; }); return;
       case 'fir': updateHole(function (d) { d.fir = d.fir === v ? undefined : v; }); return;
       case 'miss': updateHole(function (d) { d.miss = d.miss === v ? undefined : v; }); return;
       case 'inc': updateHole(function (d) { d[v] = (d[v] || 0) + 1; }); return;
@@ -2843,6 +3007,9 @@
       case 'adm-export': shareFile('slopetabell-' + new Date().toISOString().slice(0, 10) + '.csv', libCsv(), 'text/csv'); return;
       case 'adm-pull': pullShared(false); return;
       case 'adm-push': pushShared(); return;
+      case 'fav': { var fv = state.favCourses = state.favCourses || [], fi = fv.indexOf(v); if (fi >= 0) fv.splice(fi, 1); else fv.push(v); save(); var sc2 = document.getElementById('setup-courses'); if (sc2 && view.setup) { sc2.innerHTML = courseList(view.setup); return; } break; }
+      case 'play-again': { var pc0 = courseById(v); if (pc0) { view.play = { step: 'course', type: 0, idx: 0, pos: null }; goSetupFromPlay(pc0, null); } break; }
+      case 'sat-toggle': state.ui.sat = !state.ui.sat; save(); gps.boxKey = null; refreshGps(true); return;
       case 'hole-mode': view.holeMode = view.holeMode === 'hole' ? 'card' : 'hole'; window.scrollTo(0, 0); break;
       case 'finish': {
         if (!r) break;
@@ -2922,6 +3089,7 @@
     if (key.indexOf('add.') === 0) { view.setup.add[key.slice(4)] = val; return; }
     if (key.indexOf('cloud.') === 0) { cloudForm[key.slice(6)] = val; return; }
     if (key === 'live.code') { view.liveCode = val; return; }
+    if (key === 'setup.q') { if (view.setupQ === val) return; view.setupQ = val; var scl = document.getElementById('setup-courses'); if (scl && view.setup) scl.innerHTML = courseList(view.setup); return; }
     if (key === 'play.q') { if (view.play.q === val) return; view.play.q = val; var pr = document.getElementById('play-results'); if (pr) pr.innerHTML = playResults(); return; }
     if (key === 'dir.q') { if (view.dirQ === val) return; view.dirQ = val; var dl = document.getElementById('dir-list'); if (dl) dl.innerHTML = dirListHtml(); return; }
     if (key === 'adm.pin' || key === 'adm.pin2') { adminUi[key.slice(4)] = val; return; }
@@ -2967,7 +3135,14 @@
       if (pk === 'hi') {
         var hi = C.parseHandicapIndex(val);
         view.hiError = val.trim() !== '' && hi === null;
-        if (!view.hiError) state.profile.hi = hi;
+        if (!view.hiError && hi !== state.profile.hi) {
+          state.profile.hi = hi;
+          if (hi !== null) {
+            var hh = state.profile.hiHistory = state.profile.hiHistory || [], today = new Date().toISOString().slice(0, 10);
+            if (hh.length && hh[hh.length - 1].d === today) hh[hh.length - 1].hi = hi; else hh.push({ d: today, hi: hi });
+            if (hh.length > 120) hh.splice(0, hh.length - 120);
+          }
+        }
       } else state.profile[pk] = val;
       save(); render(); return;
     }
@@ -3001,7 +3176,7 @@
     document.addEventListener('change', function (e) { if (e.target.hasAttribute('data-field')) onField(e.target); });
     document.addEventListener('input', function (e) {
       var k = e.target.getAttribute('data-field');
-      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code' || k === 'dir.q' || k === 'play.q' || k === 'adm.pin' || k === 'adm.pin2' || k === 'adm.text' || (k && k.indexOf('admf.') === 0))) onField(e.target);
+      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code' || k === 'dir.q' || k === 'play.q' || k === 'setup.q' || k === 'adm.pin' || k === 'adm.pin2' || k === 'adm.text' || (k && k.indexOf('admf.') === 0))) onField(e.target);
     });
     window.addEventListener('pagehide', save);
     document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.getAttribute && e.target.getAttribute('data-field') === 'find.q') { view.find.q = e.target.value; searchCourses(view.find.q); } });

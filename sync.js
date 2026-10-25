@@ -16,7 +16,7 @@
     (state.rounds || []).forEach(function (r) { d['round:' + r.id] = { kind: 'round', id: r.id, data: r }; });
     (state.courses || []).forEach(function (c) { if (c.id !== 'demo') d['course:' + c.id] = { kind: 'course', id: c.id, data: c }; });
     var p = state.profile || {};
-    d['profile:me'] = { kind: 'profile', id: 'me', data: { name: p.name, hi: p.hi, homeClub: p.homeClub, lang: p.lang, theme: p.theme, allowance: p.allowance, gender: p.gender || null } };
+    d['profile:me'] = { kind: 'profile', id: 'me', data: { name: p.name, hi: p.hi, homeClub: p.homeClub, lang: p.lang, theme: p.theme, allowance: p.allowance, gender: p.gender || null, hiHistory: p.hiHistory || [] } };
     d['bag:all'] = { kind: 'bag', id: 'all', data: state.bag || [] };
     d['friends:all'] = { kind: 'friends', id: 'all', data: state.friends || [] };
     if (state.baseline) d['baseline:all'] = { kind: 'baseline', id: 'all', data: state.baseline };

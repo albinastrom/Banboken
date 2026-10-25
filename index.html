@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0F3D2E">
+<meta name="theme-color" content="#09281F">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://server.arcgisonline.com; connect-src 'self' https://api.open-meteo.com https://overpass-api.de https://overpass.kumi.systems https://overpass.private.coffee https://maps.mail.ru https://nominatim.openstreetmap.org https://*.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="description" content="Golfapp med GPS-avstånd, scorekort, WHS-handicap, matcher, statistik och Strokes Gained.">
@@ -17,7 +17,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230F3D2E'/%3E%3Cpath d='M26 14v34' stroke='%23fff' stroke-width='4'/%3E%3Cpath d='M28 14l16 7-16 7z' fill='%23C9A44C'/%3E%3Cellipse cx='32' cy='50' rx='14' ry='3' fill='%23fff' opacity='.5'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg:#FFFFFF; --surface:#EEF3F0; --ink:#000000; --muted:#3E4F47; --line:#C9D5CE;
@@ -546,6 +546,310 @@ textarea{font:inherit;font-size:15px;color:var(--ink);background:var(--bg);borde
 .pickedcourse small{color:var(--muted);font-weight:600;letter-spacing:.04em}
 .pickedcourse b{font-family:var(--cond);font-size:24px}
 @media (prefers-reduced-motion:no-preference){.pick button.on{transition:background .12s}}
+
+/* =====================================================================
+   SCANDINAVIAN LUXURY GOLF – designsystem (lager som ersätter tidigare stil)
+   ===================================================================== */
+:root{
+  --forest:#103D2F; --midnight:#09281F; --champagne:#C9A65A; --ivory:#F8F6F0; --sage:#DDE6DF; --charcoal:#202622;
+  --bg:var(--ivory); --surface:#EFEDE4; --card:#FFFFFF; --ink:var(--charcoal); --muted:#5B6660; --line:#DDE6DF; --line-strong:#C7D3CA;
+  --green:var(--forest); --green-2:#1F5C47; --on-green:#F8F6F0; --gold:var(--champagne); --gold-ink:#202622;
+  --under:#1F5C47; --over:#6B5A3A; --danger:#9C3B2E; --ok:#1F5C47;
+  --font:'Hanken Grotesk',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  --cond:'Hanken Grotesk',-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  --serif:'Newsreader','Iowan Old Style','Palatino Linotype',Georgia,serif;
+  --r-lg:26px; --r-md:18px; --r-sm:12px; --r-pill:999px;
+  --sh-1:0 1px 2px rgba(9,40,31,.06),0 6px 18px rgba(9,40,31,.07);
+  --sh-2:0 2px 6px rgba(9,40,31,.08),0 16px 40px rgba(9,40,31,.14);
+  --ease:cubic-bezier(.2,.8,.2,1);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#071A14; --surface:#0E241C; --card:#102A21; --ink:#F3F0E8; --muted:#A9B6AE; --line:#1E3A2F; --line-strong:#2A4A3D;
+    --green:#1D5A45; --green-2:#7FC2A2; --on-green:#F8F6F0; --gold:#C9A65A; --gold-ink:#202622; --under:#8CCFAE; --over:#D9C08A; --danger:#E7907F; --ok:#8CCFAE;
+    --sh-1:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3); --sh-2:0 2px 6px rgba(0,0,0,.4),0 16px 40px rgba(0,0,0,.45); color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#071A14; --surface:#0E241C; --card:#102A21; --ink:#F3F0E8; --muted:#A9B6AE; --line:#1E3A2F; --line-strong:#2A4A3D;
+  --green:#1D5A45; --green-2:#7FC2A2; --on-green:#F8F6F0; --gold:#C9A65A; --gold-ink:#202622; --under:#8CCFAE; --over:#D9C08A; --danger:#E7907F; --ok:#8CCFAE;
+  --sh-1:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3); --sh-2:0 2px 6px rgba(0,0,0,.4),0 16px 40px rgba(0,0,0,.45); color-scheme:dark;
+}
+body{font:500 16.5px/1.5 var(--font);font-variant-numeric:tabular-nums;letter-spacing:-.003em;background:var(--bg);color:var(--ink)}
+body::before{background:var(--midnight)}
+h1,h2{font-family:var(--serif);font-weight:500;letter-spacing:-.01em}
+h3{font-family:var(--font);font-weight:650;letter-spacing:-.005em}
+.note,.muted{color:var(--muted)}
+::selection{background:var(--sage);color:var(--charcoal)}
+@keyframes enter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes pop{0%{transform:scale(.9)}60%{transform:scale(1.06)}100%{transform:scale(1)}}
+@keyframes tick{from{opacity:.55}to{opacity:1}}
+main.enter{animation:enter .22s var(--ease) both}
+button{transition:transform .08s var(--ease),background-color .15s,border-color .15s,color .15s}
+button:active:not([disabled]){transform:scale(.97)}
+
+/* Toppfält */
+.bar{background:var(--midnight);border-bottom:1px solid rgba(201,166,90,.45)}
+.bar-in{min-height:58px}
+.bar h1{font-family:var(--serif);font-weight:500;font-size:24px;letter-spacing:0}
+.mark{width:22px;height:22px;clip-path:none;background:none;border:1.5px solid var(--champagne);border-radius:50%;position:relative}
+.mark::after{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--champagne)}
+.bar-btn{border:1px solid rgba(248,246,240,.35);font-weight:600;font-size:15px;min-height:38px}
+.bar-back{font-size:30px}
+
+/* Knappar */
+.btn{border-radius:var(--r-pill);font-weight:650;letter-spacing:.005em;min-height:52px}
+.btn.gold{background:var(--forest);color:var(--ivory);box-shadow:none;border:1px solid var(--forest)}
+.btn.gold:not([disabled]):hover{background:var(--midnight)}
+.btn.big{font-family:var(--font);font-size:17px;min-height:58px;letter-spacing:.01em}
+.btn.ghost{border:1.5px solid var(--line-strong);color:var(--ink);background:var(--card)}
+.btn.lux{background:var(--ivory);color:var(--midnight);border:1px solid var(--ivory)}
+.chip{border:1px solid var(--line-strong);background:var(--card);border-radius:var(--r-pill);font-weight:600;color:var(--ink)}
+.chip.on{background:var(--forest);border-color:var(--forest);color:var(--ivory)}
+.link{color:var(--green-2);text-decoration-thickness:1px}
+.seg{border:1px solid var(--line-strong);border-radius:var(--r-pill);background:var(--card);padding:3px;gap:3px}
+.seg button{border:0;border-radius:var(--r-pill);background:transparent;min-height:42px;color:var(--ink)}
+.seg button.on{background:var(--forest);color:var(--ivory)}
+.tag{border:1px solid var(--line-strong);color:var(--muted);font-weight:600;letter-spacing:.01em}
+.tag.ok{border-color:var(--green-2);color:var(--green-2)}
+.tag.demo{background:var(--champagne);border-color:var(--champagne);color:var(--charcoal)}
+.warn{background:#F3E9D2;color:#3C2F12;border:1px solid #E2CFA3;border-radius:var(--r-sm);font-weight:600}
+.warn.tight{border-radius:0;border-width:0 0 1px}
+input,select,textarea{border:1px solid var(--line-strong);border-radius:var(--r-sm);background:var(--card)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--champagne);outline-offset:1px}
+.choice{border:1px solid var(--line);border-radius:var(--r-md);background:var(--card);box-shadow:var(--sh-1)}
+.choice.on{border-color:var(--forest);box-shadow:inset 0 0 0 1px var(--forest),var(--sh-1);background:var(--card)}
+.block{border-bottom:1px solid var(--line)}
+.row{border-bottom:1px solid var(--line)}
+.row strong{font-family:var(--serif);font-weight:500;font-size:19px}
+
+/* Navigering */
+.tabs{background:color-mix(in srgb,var(--bg) 88%,transparent);-webkit-backdrop-filter:saturate(1.4) blur(16px);backdrop-filter:saturate(1.4) blur(16px);border-top:1px solid var(--line)}
+.tabs button{color:var(--muted);font-weight:600;font-size:11.5px;letter-spacing:.01em;position:relative}
+.tabs svg{stroke-width:1.6}
+.tabs button.on{color:var(--ink)}
+.tabs button.on svg{stroke:var(--forest)}
+.tabs button.on::after{content:"";position:absolute;bottom:4px;width:4px;height:4px;border-radius:50%;background:var(--champagne)}
+.tabs .playbtn{width:70px;height:70px;bottom:14px;background:var(--forest);border:1px solid var(--forest);box-shadow:0 0 0 4px var(--bg),0 0 0 5px rgba(201,166,90,.7),var(--sh-2);color:var(--ivory)}
+.tabs .playbtn span{font:650 13px/1.15 var(--font);letter-spacing:.01em}
+.tabs .playbtn.live{background:var(--midnight);color:var(--ivory);border-color:var(--midnight)}
+.tabs .playbtn.live::after{content:"";position:absolute;top:12px;right:14px;width:8px;height:8px;border-radius:50%;background:var(--champagne)}
+.tabs .playbtn.on{box-shadow:0 0 0 4px var(--bg),0 0 0 5.5px var(--champagne),var(--sh-2)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .tabs button.on svg{stroke:var(--champagne)}}
+
+/* Startsida */
+.home3{position:relative;background:var(--midnight);color:var(--ivory);padding:calc(18px + env(safe-area-inset-top,0px)) 22px 30px;margin-top:calc(-1 * env(safe-area-inset-top,0px));border-radius:0 0 var(--r-lg) var(--r-lg);overflow:hidden}
+.home3 .contours{position:absolute;inset:0;width:100%;height:100%;opacity:.5;pointer-events:none}
+.home3>*{position:relative}
+.h3-top{display:flex;align-items:center;justify-content:space-between}
+.h3-av{width:52px;height:52px;border-radius:50%;border:1px solid var(--champagne);background:rgba(248,246,240,.06);color:var(--ivory);font:600 18px var(--font);letter-spacing:.04em}
+.h3-brand{font-family:var(--serif);font-size:18px;opacity:.85;letter-spacing:.02em}
+.h3-greet{font-family:var(--serif);font-weight:400;font-size:34px;line-height:1.1;margin:30px 0 0}
+.h3-hcp{display:flex;align-items:baseline;gap:12px;margin:18px 0 22px}
+.h3-hcp b{font:700 64px/0.9 var(--font);letter-spacing:-.03em;color:var(--ivory)}
+.h3-hcp span{display:flex;flex-direction:column;font-size:14px;color:rgba(248,246,240,.72)}
+.h3-hcp em{font-style:normal;color:var(--champagne);font-weight:600}
+.h3-cta{display:grid;gap:10px}
+.h3-cta .btn.lux{min-height:58px;font-size:17px}
+.h3-cta .btn.outline{background:transparent;border:1px solid rgba(248,246,240,.35);color:var(--ivory)}
+.page.home{padding:20px 18px 0}
+.card{background:var(--card);border-radius:var(--r-md);box-shadow:var(--sh-1);padding:16px 18px;margin:0 0 14px}
+.card h3{font-size:15px;color:var(--muted);font-weight:600;margin:0 0 4px}
+.card .title{font-family:var(--serif);font-size:24px;line-height:1.15;margin:0}
+.card .sub{color:var(--muted);font-size:14.5px;margin:2px 0 0}
+.card .actions{display:flex;gap:8px;margin-top:14px}
+.card .actions .btn{min-height:44px;flex:1;font-size:15px}
+.dev{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.dev div{display:flex;flex-direction:column}
+.dev b{font:700 26px/1.1 var(--font);letter-spacing:-.02em}
+.dev small{color:var(--muted);font-size:13px}
+.spark{width:100%;height:56px;margin-top:8px}
+.spark .ln{fill:none;stroke:var(--forest);stroke-width:2}
+.spark .ar{fill:var(--sage);opacity:.55}
+.spark .dt{fill:var(--champagne)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .spark .ln{stroke:var(--green-2)} :root:not([data-theme="light"]) .spark .ar{fill:#1E3A2F}}
+.live-card{background:var(--forest);border-radius:var(--r-md);box-shadow:var(--sh-1);border:0}
+.live-card strong{font-family:var(--font);font-weight:700}
+.sec-h h2{font-size:24px}
+.rcard{border:1px solid var(--line);background:var(--card);border-radius:var(--r-md);box-shadow:var(--sh-1);color:var(--ink)}
+.rcard b{font-family:var(--serif);font-weight:500;font-size:22px}
+.rcard small{color:var(--muted)}
+.rcard strong{font:700 44px var(--font);letter-spacing:-.02em;color:var(--forest)}
+.rcard.empty{border-style:dashed;background:transparent;box-shadow:none}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .rcard strong{color:var(--green-2)}}
+
+/* Rond: hålhuvud */
+.scorebar{background:var(--midnight);color:var(--ivory);top:calc(59px + env(safe-area-inset-top,0px));border-bottom:1px solid rgba(201,166,90,.35)}
+.scorebar div{border-right:1px solid rgba(248,246,240,.12);padding:7px 2px 8px}
+.scorebar b{font:700 22px/1.1 var(--font)}
+.scorebar small{font-size:11.5px;opacity:.7;letter-spacing:.01em}
+.modetabs{top:calc(112px + env(safe-area-inset-top,0px));background:var(--bg)}
+.modetabs button.on{border-bottom-color:var(--champagne)}
+.page.play{padding-top:0}
+.hole-head{display:grid;grid-template-columns:44px auto 1fr 44px;align-items:center;gap:10px;margin:0 -16px;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--line)}
+.hole-no{background:none;color:var(--ink);border:0;min-width:0;padding:0;flex-direction:row;align-items:baseline;gap:6px}
+.hole-no small{font-size:13px;color:var(--muted);opacity:1}
+.hole-no span{font-family:var(--serif);font-weight:500;font-size:44px;line-height:1}
+.hole-head dl{display:flex;gap:12px;justify-content:flex-end;grid-template-columns:none;white-space:nowrap}
+.hole-head dl div{display:flex;flex-direction:column;align-items:center}
+.hole-head dt{font-size:12px}
+.hole-head dd{font:700 18px var(--font)}
+.hole-head dt{white-space:nowrap}
+@media (max-width:380px){.hole-head dl{gap:9px}.hole-head dd{font-size:16px}}
+.navbtn{width:44px;height:44px;border-radius:50%;border:1px solid var(--line-strong);background:var(--card);font-size:24px;line-height:1;color:var(--ink);box-shadow:var(--sh-1)}
+.navbtn[disabled]{opacity:.3;box-shadow:none}
+
+/* GPS: kartan i fokus */
+.gps{border:0;border-radius:0;padding:0;margin:0 -16px 6px}
+.mapwrap{position:relative;background:var(--midnight)}
+.mapwrap .holemap{border-radius:0}
+.mapwrap.nomap{background:var(--bg);padding:12px 16px 4px}
+.map-top{position:absolute;top:10px;left:12px;right:64px;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;pointer-events:none}
+.map-top>*{pointer-events:auto}
+.mapwrap.nomap .map-top{position:static;margin-bottom:8px}
+.gps-st{display:inline-flex;align-items:center;gap:6px;background:rgba(9,40,31,.78);color:var(--ivory);border-radius:var(--r-pill);padding:6px 11px;font-size:13px;font-weight:600;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.mapwrap.nomap .gps-st{background:var(--surface);color:var(--ink)}
+.gps-st.weak,.gps-st.bad{color:#FFE6B8}
+.mapwrap.nomap .gps-st.weak,.mapwrap.nomap .gps-st.bad{color:var(--danger)}
+.gps-st.test{background:#F97316;color:#1B1B1B}
+.gps-st .dot{width:8px;height:8px;background:#7FD69E}
+.gps-st .dot.weak{background:var(--champagne)} .gps-st .dot.bad{background:#FF9C8A} .gps-st .dot.wait{background:var(--champagne)}
+.map-top .tag{background:rgba(9,40,31,.6);color:rgba(248,246,240,.85);border-color:transparent;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.map-top .gps-go{min-height:36px;background:var(--ivory);color:var(--midnight);border:0;font-weight:700}
+.map-ctrl{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:8px}
+.mbtn{width:44px;height:44px;border-radius:14px;border:0;background:rgba(248,246,240,.94);color:var(--midnight);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.mbtn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.mbtn.on{background:var(--forest);color:var(--ivory)}
+.mbtn.on svg{stroke:var(--champagne)}
+.mbtn[disabled]{opacity:.45}
+.map-dist{position:absolute;left:12px;right:12px;bottom:12px}
+.mapwrap.nomap .map-dist{position:static}
+.plate{display:grid;grid-template-columns:1fr 1.5fr 1fr;align-items:end;background:rgba(248,246,240,.95);color:var(--charcoal);border-radius:20px;padding:10px 8px 10px;box-shadow:0 10px 30px rgba(0,0,0,.28);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+.plate>div{display:flex;flex-direction:column;align-items:center;position:relative}
+.plate>div+div::before{content:"";position:absolute;left:0;top:14%;bottom:8%;width:1px;background:linear-gradient(var(--champagne),transparent)}
+.plate small{font-size:12px;font-weight:600;color:#5B6660;letter-spacing:.01em}
+.plate b{font:700 34px/1 var(--font);letter-spacing:-.03em;margin-top:2px}
+.plate .mid b{font-size:68px;font-weight:800;letter-spacing:-.045em;color:var(--midnight)}
+.plate.stale b{color:#9AA5A0;text-decoration:line-through;text-decoration-thickness:2px}
+.plate b.tick{animation:tick .35s ease-out}
+.mapwrap.nomap .plate{box-shadow:var(--sh-1);background:var(--card);color:var(--ink)}
+.mapwrap.nomap .plate .mid b{color:var(--ink)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .plate{background:rgba(7,26,20,.92);color:var(--ivory)} :root:not([data-theme="light"]) .plate .mid b{color:var(--ivory)} :root:not([data-theme="light"]) .plate small{color:#A9B6AE}}
+:root[data-theme="dark"] .plate{background:rgba(7,26,20,.92);color:var(--ivory)} :root[data-theme="dark"] .plate .mid b{color:var(--ivory)}
+#gps-live{padding:10px 16px 0}
+.gps-under{padding:0 16px}
+.hazards li{border-top:1px solid var(--line)}
+.hz-n b{font:700 22px var(--font)}
+.target-row{background:var(--card);box-shadow:var(--sh-1);border-radius:var(--r-sm)}
+.target-row b{font:700 20px var(--font)}
+.suggest{border:1px solid var(--champagne);background:var(--card);border-radius:var(--r-pill);margin:10px 16px 0;width:calc(100% - 32px)}
+.testbar{margin:10px 16px}
+.testpad{padding:0 16px}
+.greg{margin:10px 16px}
+.maplinks{display:flex;gap:16px;padding:6px 16px 0}
+.maplinks .link{padding:6px 0;font-size:14px}
+
+/* Inmatning av slag */
+.entry h3{font-size:14px;color:var(--muted);font-weight:600;letter-spacing:.01em;margin-bottom:10px}
+.pick{gap:10px}
+.pick button{border:1px solid var(--line-strong);background:var(--card);border-radius:50%;aspect-ratio:1;min-height:0;font:600 24px var(--font);color:var(--ink);box-shadow:var(--sh-1)}
+.pick.strokes{grid-template-columns:repeat(4,1fr)}
+.pick.strokes button,.pick:not(.three):not(.four):not(.lies) button{max-width:76px;justify-self:center;width:100%}
+.pick.three button,.pick.four button,.pick.lies button{border-radius:var(--r-pill);aspect-ratio:auto;min-height:50px;font:600 15.5px var(--font)}
+.pick button.under{color:var(--forest)}
+.pick button.on{background:var(--forest);border-color:var(--forest);color:var(--ivory);box-shadow:0 0 0 3px rgba(201,166,90,.45)}
+.pick button.on.under{background:var(--forest)}
+.pick button.on.over{background:var(--charcoal);border-color:var(--charcoal)}
+.pick button.pop{animation:pop .22s var(--ease)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pick button.under{color:var(--green-2)} :root:not([data-theme="light"]) .pick button.on.over{background:#3A4A42}}
+.gir{color:var(--muted);font-size:15px}
+.gir b{color:var(--ink)}
+.extra{border-color:var(--line)}
+.counter button{border:1px solid var(--line-strong);background:var(--card)}
+.holenav{gap:10px}
+.play .holenav{background:color-mix(in srgb,var(--bg) 92%,transparent);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border-top:1px solid var(--line);bottom:calc(68px + env(safe-area-inset-bottom,0px))}
+.dots button{border:1px solid var(--line);background:var(--card);border-radius:10px;font-weight:600}
+.dots button.done{background:var(--sage);color:var(--charcoal);border-color:var(--sage)}
+.dots button.cur{border-color:var(--forest);border-width:1.5px;box-shadow:inset 0 0 0 1px var(--forest)}
+.others .prow{border-top:1px solid var(--line)}
+.pv{background:var(--forest);border-color:var(--forest);border-radius:14px}
+.pm,.pk{border:1px solid var(--line-strong);background:var(--card);border-radius:14px}
+.gpanel{border:1px solid var(--champagne);background:var(--card);box-shadow:var(--sh-1)}
+.gp-h{font-family:var(--serif);font-weight:500}
+
+/* Scorekort */
+table.card{font-size:15px;background:var(--card);border-radius:var(--r-sm);overflow:hidden;box-shadow:var(--sh-1);border-collapse:separate;border-spacing:0}
+table.card th,table.card td{border:0;border-bottom:1px solid var(--line);border-right:1px solid var(--line)}
+table.card tr.hd th{background:var(--midnight);color:var(--ivory);font-weight:600;border-color:rgba(248,246,240,.08)}
+table.card tr.hd th.lbl{background:var(--midnight)}
+table.card th.lbl{background:var(--card);font-weight:600;color:var(--muted);font-size:13.5px}
+table.card tr.score td{font:700 19px var(--font)}
+td.sc span{width:32px;height:32px}
+td.sc span.birdie{border:1.5px solid var(--forest);color:var(--forest);border-radius:50%}
+td.sc span.eagle{background:var(--forest);color:var(--ivory);border:0;border-radius:50%;box-shadow:0 0 0 2px var(--card),0 0 0 3.5px var(--forest)}
+td.sc span.bogey{border:1.5px solid #8C978F;color:var(--ink);border-radius:5px}
+td.sc span.dbl{background:#E7E3D7;color:var(--charcoal);border:0;border-radius:5px;box-shadow:0 0 0 2px var(--card),0 0 0 3.5px #8C978F}
+table.card td.rec i{color:var(--champagne)}
+.totals,.kpis{background:var(--line);border:0;border-radius:var(--r-md);box-shadow:var(--sh-1)}
+.totals div,.kpis div{background:var(--card)}
+.totals dd,.kpis dd{font:700 28px var(--font);letter-spacing:-.02em}
+.diffbox .diff b{font:700 22px var(--font)}
+
+/* Ban- och tee-val */
+.coursefind{position:relative;margin:4px 0 10px}
+.coursefind input{padding-left:42px;border-radius:var(--r-pill);min-height:50px;background:var(--card)}
+.coursefind svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:20px;height:20px;fill:none;stroke:var(--muted);stroke-width:2}
+.ccard{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);padding:14px 16px;margin:0 0 10px;box-shadow:var(--sh-1);color:var(--ink)}
+.ccard.on{border-color:var(--forest);box-shadow:inset 0 0 0 1px var(--forest),var(--sh-1)}
+.ccard b{font-family:var(--serif);font-weight:500;font-size:20px;line-height:1.2}
+.ccard small{grid-column:1;color:var(--muted);font-size:14px}
+.ccard .tags{grid-column:1;display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.star{grid-row:1 / span 3;grid-column:2;width:40px;height:40px;border-radius:50%;border:0;background:transparent;color:var(--line-strong);font-size:22px}
+.star.on{color:var(--champagne)}
+.grp-h{font-size:14px;color:var(--muted);font-weight:600;margin:14px 0 8px}
+.teepick{display:grid;gap:10px}
+.teerow{display:grid;grid-template-columns:18px 1fr auto;gap:4px 12px;align-items:center;text-align:left;width:100%;background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);padding:13px 16px;box-shadow:var(--sh-1);color:var(--ink)}
+.teerow.on{border-color:var(--forest);box-shadow:inset 0 0 0 1px var(--forest),var(--sh-1)}
+.teedot{width:16px;height:16px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)}
+.teerow strong{font:700 18px var(--font)}
+.teerow .tmeta{grid-column:2 / span 2;display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:14px}
+.teerow .tmeta b{color:var(--ink);font-weight:700}
+.teerow .tag{justify-self:end}
+dl.kv{border-radius:var(--r-md);box-shadow:var(--sh-1);border:0;background:var(--line)}
+dl.kv div{background:var(--card)}
+dl.kv dd{font-weight:700}
+
+/* Statistik */
+.dash{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 14px}
+.dash .tile{background:var(--card);border-radius:var(--r-md);box-shadow:var(--sh-1);padding:14px 16px}
+.dash .tile small{display:block;color:var(--muted);font-size:13px;font-weight:600}
+.dash .tile b{font:700 34px/1.1 var(--font);letter-spacing:-.025em}
+.dash .tile.hero{grid-column:1 / -1;background:var(--midnight);color:var(--ivory)}
+.dash .tile.hero small{color:rgba(248,246,240,.7)}
+.dash .tile.hero svg .ln{stroke:var(--champagne)}
+.dash .tile.hero svg .ar{fill:rgba(201,166,90,.14)}
+.dash .tile.hero svg .dt{fill:var(--ivory)}
+.distbar{display:flex;height:14px;border-radius:var(--r-pill);overflow:hidden;margin:10px 0 8px;background:var(--line)}
+.distbar i{display:block;height:100%}
+.dl-eagle{background:#0B3326}.dl-birdie{background:var(--forest)}.dl-par{background:#7FA592}.dl-bogey{background:#C9C2AE}.dl-dbl{background:#8C7F63}
+.distleg{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;font-size:12.5px;color:var(--muted)}
+.distleg span{display:flex;flex-direction:column}
+.distleg b{font:700 17px var(--font);color:var(--ink)}
+.chart .line{stroke:var(--forest)}
+.chart .pt{fill:var(--champagne)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .chart .line{stroke:var(--green-2)}}
+
+/* Spela golf-flödet och laddning */
+.ptype{background:radial-gradient(120% 70% at 50% 0%,#1B5A44 0%,var(--midnight) 60%,#04140E 100%)}
+.ptitle h2{font-family:var(--serif);font-weight:500;letter-spacing:0;border-bottom:1px solid var(--champagne)}
+.btn.pcta,.psheet .btn.gold.big{background:var(--ivory);color:var(--midnight);border-color:var(--ivory)}
+.psheet .btn.gold.big{background:var(--forest);color:var(--ivory);border-color:var(--forest)}
+.pc-info h2{font-family:var(--serif);font-weight:500}
+.psheet{background:var(--bg)}
+.spin{border-color:var(--line);border-top-color:var(--forest)}
+.flash{background:var(--midnight);color:var(--ivory);border:1px solid rgba(201,166,90,.5);box-shadow:var(--sh-2)}
+@media (prefers-reduced-motion:reduce){main.enter,.pick button.pop,.plate b.tick{animation:none}}
 </style>
 </head>
 <body>
@@ -1703,7 +2007,7 @@ textarea{font:inherit;font-size:15px;color:var(--ink);background:var(--bg);borde
     (state.rounds || []).forEach(function (r) { d['round:' + r.id] = { kind: 'round', id: r.id, data: r }; });
     (state.courses || []).forEach(function (c) { if (c.id !== 'demo') d['course:' + c.id] = { kind: 'course', id: c.id, data: c }; });
     var p = state.profile || {};
-    d['profile:me'] = { kind: 'profile', id: 'me', data: { name: p.name, hi: p.hi, homeClub: p.homeClub, lang: p.lang, theme: p.theme, allowance: p.allowance, gender: p.gender || null } };
+    d['profile:me'] = { kind: 'profile', id: 'me', data: { name: p.name, hi: p.hi, homeClub: p.homeClub, lang: p.lang, theme: p.theme, allowance: p.allowance, gender: p.gender || null, hiHistory: p.hiHistory || [] } };
     d['bag:all'] = { kind: 'bag', id: 'all', data: state.bag || [] };
     d['friends:all'] = { kind: 'friends', id: 'all', data: state.friends || [] };
     if (state.baseline) d['baseline:all'] = { kind: 'baseline', id: 'all', data: state.baseline };
@@ -2471,7 +2775,7 @@ window.I18N = {
     handicapIndex: 'Handicapindex', courseHcp: 'Banhandicap', playingHcp: 'Spelhandicap', calc: 'Uträkning',
     demoWarning: 'DEMO – påhittade värden. Inte en riktig bana och räknas inte i din statistik.',
     unverified: 'Ej verifierad', verified: 'Verifierad', demo: 'Demo',
-    par: 'Par', si: 'Index', length: 'Längd', received: 'Hcp-slag', strokes: 'Slag', putts: 'Puttar',
+    par: 'Par', si: 'Index', length: 'Längd', received: 'Slag hcp', strokes: 'Slag', putts: 'Puttar',
     fairway: 'Fairway', left: 'Vänster', right: 'Höger', hit: 'Träff', gir: 'Green i regulation', girAuto: 'räknas automatiskt',
     yes: 'Ja', no: 'Nej', more: 'Mer statistik', penalties: 'Pliktslag', bunker: 'Bunkerslag',
     missedGreen: 'Missad green', short: 'Kort', long: 'Lång', pickUp: 'Stryk hålet', pickedUp: 'Struket',
@@ -3025,6 +3329,24 @@ Object.assign(window.I18N.en, {
   sharedPulled: '{n} ratings loaded.', sharedPushed: '{n} ratings published.', deleteRowConfirm: 'Delete this rating?',
   officialLocked: 'Official rating – changed only in Course administration.'
 });
+
+/* Premiumdesign */
+Object.assign(window.I18N.sv, {
+  playShort: 'Spela', toRoundShort: 'Till ronden', sinceDate: 'sedan', lastPlayed: 'Senast spelad', playAgain: 'Spela igen', strokesShort: 'slag',
+  yourDev: 'Din utveckling, senaste 10 ronderna', roundsPlayed: 'Spelade ronder', favorite: 'Favorit', favorites: 'Favoriter', recentCourses: 'Senast spelade', allCourses: 'Alla banor',
+  lastPlayedShort: 'senast', hcpDev: 'Handicapindex', hcpDevEmpty: 'Utvecklingen visas när du har uppdaterat ditt handicapindex några gånger under Profil.',
+  scoreDist: 'Resultat per hål', perRound: 'Snitt per rond', sd_eagle: 'Eagle+', sd_birdie: 'Birdie', sd_par: 'Par', sd_bogey: 'Bogey', sd_dbl: 'Dubbel+'
+});
+Object.assign(window.I18N.en, {
+  playShort: 'Play', toRoundShort: 'To round', sinceDate: 'since', lastPlayed: 'Last played', playAgain: 'Play again', strokesShort: 'strokes',
+  yourDev: 'Your progress, last 10 rounds', roundsPlayed: 'Rounds played', favorite: 'Favourite', favorites: 'Favourites', recentCourses: 'Recently played', allCourses: 'All courses',
+  lastPlayedShort: 'last', hcpDev: 'Handicap Index', hcpDevEmpty: 'Progress appears once you have updated your Handicap Index a few times under Profile.',
+  scoreDist: 'Score per hole', perRound: 'Average per round', sd_eagle: 'Eagle+', sd_birdie: 'Birdie', sd_par: 'Par', sd_bogey: 'Bogey', sd_dbl: 'Double+'
+});
+
+/* Rubriker i meningsform (premiumdesign) */
+Object.assign(window.I18N.sv, { chooseGameType: 'Välj speltyp', courseCaps: 'Bana', pt_standard: 'Standardspel', pt_match: 'Matchspel', pt_team: 'Lagspel', pt_training: 'Träningsrond' });
+Object.assign(window.I18N.en, { chooseGameType: 'Choose game type', courseCaps: 'Course', pt_standard: 'Standard', pt_match: 'Match play', pt_team: 'Team game', pt_training: 'Practice round' });
 </script>
 <script>/* Banboken – etapp 1. Offline-först: all data sparas lokalt efter varje ändring. */
 (function () {
@@ -3243,9 +3565,9 @@ Object.assign(window.I18N.en, {
     else if (st === 'weak') h += '<span class="gps-st weak"><i class="dot weak"></i>' + esc(t('gpsLow')) + ' · ±' + acc + ' m</span>';
     else if (st === 'lost') h += '<span class="gps-st bad"><i class="dot bad"></i>' + esc(fmt(t('gpsLost'), { s: Math.round((gpsNow() - gps.pos.ts) / 1000) })) + '</span>';
     else if (st === 'searching') h += '<span class="gps-st"><i class="dot wait"></i>' + esc(t('gpsSearching')) + '</span>';
-    else if (st === 'denied') h += '<span class="gps-st bad">' + esc(t('gpsNoPermission')) + '</span><p class="note">' + esc(t('gpsDenied')) + '</p>';
+    else if (st === 'denied') h += '<span class="gps-st bad">' + esc(t('gpsNoPermission')) + '</span>';
     else if (st === 'unavailable') h += '<span class="gps-st bad">' + esc(t('gpsUnavailable')) + '</span> <button class="chip" data-act="gps-start">' + esc(t('retry')) + '</button>';
-    else if (st === 'off') h += '<button class="btn gold gps-go" data-act="gps-start">' + esc(t('gpsStart')) + '</button><p class="note">' + esc(t('gpsWhy')) + '</p>';
+    else if (st === 'off') h += '<button class="chip gps-go" data-act="gps-start">' + esc(t('gpsStart')) + '</button>';
     return h;
   }
 
@@ -3254,7 +3576,9 @@ Object.assign(window.I18N.en, {
   }
   function liveHtml(r, x) {
     var h = '', hole = x.hole, gi = greenInfo(hole, x.from), q = gpsQ(), stale = !x.fromTee && q === 'lost';
-    h += '<div class="dist3' + (stale ? ' stale' : '') + '">' + d3('frontEdge', gi.front) + d3('midGreen', gi.mid, !gi.exact, true) + d3('backEdge', gi.back) + '</div>';
+    var gst = gpsState();
+    if (gst === 'off') h += '<p class="note">' + esc(t('gpsWhy')) + '</p>';
+    if (gst === 'denied') h += '<p class="note">' + esc(t('gpsDenied')) + '</p>';
     if (stale) h += '<p class="warn">' + esc(t('distStale')) + '</p>';
     else if (!x.fromTee && q === 'weak') h += '<p class="note center">' + esc(fmt(t('distWeak'), { a: Math.round(gps.pos.acc) })) + '</p>';
     if (x.fromTee) h += '<p class="note center">' + esc(gps.pos ? t('fromTeeFar') : t('fromTee')) + '</p>';
@@ -3314,27 +3638,32 @@ Object.assign(window.I18N.en, {
   }
   function r0hole() { var r = activeRound(); return r ? holeNo(r, r.current) : ''; }
 
+  function mapButtons(x) {
+    var canFollow = !!gps.pos && !x.fromTee, zoomGreen = (view.mapZoom || 'hole') === 'hole';
+    return '<button class="mbtn' + (gps.mv.follow ? ' on' : '') + '" data-act="map-follow"' + (canFollow ? '' : ' disabled') + ' aria-label="' + esc(t('followMe')) + '" title="' + esc(t('followMe')) + '">' + ICON.follow + '</button>' +
+      '<button class="mbtn" data-act="map-center"' + (canFollow ? '' : ' disabled') + ' aria-label="' + esc(t('centerMe')) + '" title="' + esc(t('centerMe')) + '">' + ICON.center + '</button>' +
+      '<button class="mbtn' + (!zoomGreen ? ' on' : '') + '" data-act="zoom:' + (zoomGreen ? 'green' : 'hole') + '" aria-label="' + esc(zoomGreen ? t('zoomGreen') : t('zoomHole')) + '" title="' + esc(zoomGreen ? t('zoomGreen') : t('zoomHole')) + '">' + (zoomGreen ? ICON.green : ICON.hole) + '</button>' +
+      '<button class="mbtn' + (state.ui.sat ? ' on' : '') + '" data-act="sat-toggle" aria-label="' + esc(t('satellite')) + '" title="' + esc(t('satellite')) + '">' + ICON.layers + '</button>' +
+      (wakeSupported() ? '<button class="mbtn' + (state.ui.wakeLock ? ' on' : '') + '" data-act="wake" aria-label="' + esc(t('keepAwake')) + '" title="' + esc(t('keepAwake')) + '">' + ICON.sun + '</button>' : '');
+  }
   function gpsInner(r) {
     var x = holeCtx(r), h = '';
-    if (!x.g) return '<p class="note">' + esc(t('noGeo')) + '</p>' + (gps.test ? testPanel() : '');
-    h += '<div class="gps-top"><span id="gps-status">' + gpsStatusHtml() + '</span>' + (x.g.source === 'demo' ? '<em class="tag demo">' + esc(t('demoGeo')) + '</em>' : '<em class="tag">' + esc(t('osmUnverified')) + '</em>') + '</div>';
+    if (!x.g) return '<div class="gps-under"><p class="note">' + esc(t('noGeo')) + '</p></div>' + (gps.test ? testPanel() : '');
+    var showMap = state.ui.mapOpen && !!x.hole;
+    h += '<div class="mapwrap' + (showMap ? '' : ' nomap') + '">';
+    if (showMap) h += '<div id="gps-map">' + mapSvg(x.hole, x.gc) + '</div>';
+    h += '<div class="map-top"><span id="gps-status">' + gpsStatusHtml() + '</span>' + (x.g.source === 'demo' ? '<em class="tag demo">' + esc(t('demoGeo')) + '</em>' : '<em class="tag">OSM</em>') + '</div>';
+    if (showMap) h += '<div class="map-ctrl">' + mapButtons(x) + '</div>';
+    if (x.hole) h += '<div class="map-dist" id="gps-dist">' + distHtml(r, x) + '</div>';
+    h += '</div>';
     if (gps.test) h += testPanel();
-    if (gps.suggest !== null && gps.suggest !== r.current) h += '<button class="suggest" data-act="go:' + gps.suggest + '">' + esc(t('seemsOnHole')) + ' ' + (gps.suggest + 1) + ' – ' + esc(t('switch')) + '</button>';
-    if (!x.hole) return h + '<p class="warn">' + esc(t('holeNoCoords').replace('{n}', holeNo(r, r.current))) + '</p>';
+    if (gps.suggest !== null && gps.suggest !== r.current) h += '<button class="suggest" data-act="go:' + gps.suggest + '">' + esc(t('seemsOnHole')) + ' ' + holeNo(r, gps.suggest) + ' – ' + esc(t('switch')) + '</button>';
+    if (!x.hole) return h + '<div class="gps-under"><p class="warn">' + esc(t('holeNoCoords').replace('{n}', holeNo(r, r.current))) + '</p></div>';
     h += '<div id="gps-live">' + liveHtml(r, x) + '</div>';
     if (view.gregOpen) h += gregPanel(x);
-    h += '<div class="maptools"><button class="chip" data-act="map-toggle">' + esc(state.ui.mapOpen ? t('hideMap') : t('showMap')) + '</button>';
-    if (state.ui.mapOpen) {
-      var canFollow = !!gps.pos && !x.fromTee;
-      h += '<button class="chip' + (gps.mv.follow ? ' on' : '') + '" data-act="map-follow"' + (canFollow ? '' : ' disabled') + '>' + esc(t('followMe')) + '</button>' +
-        '<button class="chip" data-act="map-center"' + (canFollow ? '' : ' disabled') + '>' + esc(t('centerMe')) + '</button>' +
-        '<button class="chip' + (!gps.mv.follow && (view.mapZoom || 'hole') === 'hole' ? ' on' : '') + '" data-act="zoom:hole">' + esc(t('zoomHole')) + '</button>' +
-        '<button class="chip' + (!gps.mv.follow && view.mapZoom === 'green' ? ' on' : '') + '" data-act="zoom:green">' + esc(t('zoomGreen')) + '</button>';
-      if (wakeSupported()) h += '<button class="chip' + (state.ui.wakeLock ? ' on' : '') + '" data-act="wake">' + esc(t('keepAwake')) + '</button>';
-      if (x.g.source === 'demo' && !gps.test) h += '<button class="chip" data-act="test-on">' + esc(t('simOn')) + '</button>';
-    }
-    h += '</div>';
-    if (state.ui.mapOpen) h += '<div id="gps-map">' + mapSvg(x.hole, x.gc) + '</div><p class="note">' + esc(view.gregTap ? t('regTapHint') : gps.test ? t('simTap') : t('tapHint')) + '</p>';
+    h += '<div class="maplinks"><button class="link" data-act="map-toggle">' + esc(state.ui.mapOpen ? t('hideMap') : t('showMap')) + '</button>' +
+      (x.g.source === 'demo' && !gps.test ? '<button class="link" data-act="test-on">' + esc(t('simOn')) + '</button>' : '') + '</div>';
+    if (showMap) h += '<p class="note gps-under">' + esc(view.gregTap ? t('regTapHint') : gps.test ? t('simTap') : t('tapHint')) + '</p>';
     return h;
   }
 
@@ -3349,6 +3678,12 @@ Object.assign(window.I18N.en, {
     }
     var st = document.getElementById('gps-status'); if (st) st.innerHTML = gpsStatusHtml();
     var lv = document.getElementById('gps-live'); if (lv && x.hole) lv.innerHTML = liveHtml(r, x);
+    var dp = document.getElementById('gps-dist');
+    if (dp && x.hole) {
+      var prev = dp.querySelector('.mid b'), before = prev ? prev.textContent : null;
+      dp.innerHTML = distHtml(r, x);
+      var now = dp.querySelector('.mid b'); if (now && before !== null && now.textContent !== before) dp.querySelectorAll('b').forEach(function (b) { b.classList.add('tick'); });
+    }
     updateMapDynamic(true);
     gps.lastRender = Date.now();
   }
@@ -3359,7 +3694,7 @@ Object.assign(window.I18N.en, {
   }
   // ---------- Karta ----------
   function mapSvg(hole, gc) {
-    var W = 360, H = 470, pad = 26, P = G.proj(gc), mode = view.mapZoom || 'hole', pts = [];
+    var W = 360, H = 470, padL = 22, padR = 62, padT = 48, padB = 122, P = G.proj(gc), mode = view.mapZoom || 'hole', pts = [];
     function add(poly) { poly.forEach(function (p) { pts.push(P.xy(p)); }); }
     var tee = teePoint(hole), cxy = P.xy(gc);
     if (mode === 'green') {
@@ -3375,8 +3710,8 @@ Object.assign(window.I18N.en, {
     function rot(q) { return [q[0] * u[1] - q[1] * u[0], q[0] * u[0] + q[1] * u[1]]; }
     var rp = pts.map(rot), xs = rp.map(function (q) { return q[0]; }), ys = rp.map(function (q) { return q[1]; });
     var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs), minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
-    var s = Math.min((W - 2 * pad) / Math.max(20, maxX - minX), (H - 2 * pad) / Math.max(20, maxY - minY), 8);
-    var ox = W / 2 - s * (minX + maxX) / 2, oy = H / 2 + s * (minY + maxY) / 2;
+    var s = Math.min((W - padL - padR) / Math.max(20, maxX - minX), (H - padT - padB) / Math.max(20, maxY - minY), 8);
+    var ox = (padL + W - padR) / 2 - s * (minX + maxX) / 2, oy = (padT + H - padB) / 2 + s * (minY + maxY) / 2;
     function toSvg(ll) { var r = rot(P.xy(ll)); return [s * r[0] + ox, -s * r[1] + oy]; }
     function fromSvg(sp) { var r0 = (sp[0] - ox) / s, r1 = -(sp[1] - oy) / s; return P.ll([u[1] * r0 + u[0] * r1, -u[0] * r0 + u[1] * r1]); }
     mapCtx = { toSvg: toSvg, fromSvg: fromSvg, W: W, H: H, s: s, hole: hole, gc: gc, gcSvg: toSvg(gc) };
@@ -3428,8 +3763,8 @@ Object.assign(window.I18N.en, {
   function show(el, on) { if (el) el.style.display = on ? '' : 'none'; }
   function followTransform(me) {
     var P = mapCtx.toSvg(me), G0 = mapCtx.gcSvg, d = Math.sqrt(Math.pow(P[0] - G0[0], 2) + Math.pow(P[1] - G0[1], 2));
-    var k = Math.max(1, Math.min(5, (mapCtx.H * 0.5) / Math.max(1, d)));
-    return { k: k, tx: mapCtx.W / 2 - k * P[0], ty: mapCtx.H * 0.8 - k * P[1] };
+    var k = Math.max(1, Math.min(5, (mapCtx.H * 0.4) / Math.max(1, d)));
+    return { k: k, tx: (mapCtx.W - 40) / 2 - k * P[0], ty: mapCtx.H * 0.68 - k * P[1] };
   }
   function applyMapTransform(anim) {
     var g = document.getElementById('m-view'); if (!g) return;
@@ -4663,7 +4998,7 @@ Object.assign(window.I18N.en, {
     var tabs = [['home', 'navHome', 'M4 11l8-7 8 7v9h-5v-6H9v6H4z'], ['courses', 'navCourses', 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14'], null,
       ['stats', 'navStats', 'M5 20V11M12 20V5M19 20v-7'], ['profile', 'navProfile', 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1-4 4-6 8-6s7 2 8 6']];
     return '<nav class="tabs five">' + tabs.map(function (x) {
-      if (!x) return '<div class="playslot"><button class="playbtn' + (onPlay ? ' on' : '') + (ar ? ' live' : '') + '" data-act="' + (ar ? 'tab:round' : 'play') + '"><span>' + (ar ? esc(t('toRound1')) + '<br>' + esc(t('toRound2')) : esc(t('playGolf1')) + '<br>' + esc(t('playGolf2'))) + '</span></button></div>';
+      if (!x) return '<div class="playslot"><button class="playbtn' + (onPlay ? ' on' : '') + (ar ? ' live' : '') + '" data-act="' + (ar ? 'tab:round' : 'play') + '"><span>' + (ar ? esc(t('toRoundShort')) : esc(t('playShort'))) + '</span></button></div>';
       var on = view.tab === x[0];
       return '<button data-act="tab:' + x[0] + '" class="' + (on ? 'on' : '') + '"' + (on ? ' aria-current="page"' : '') + '><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + x[2] + '"/></svg><span>' + esc(t(x[1])) + '</span></button>';
     }).join('') + '</nav>';
@@ -4735,7 +5070,7 @@ Object.assign(window.I18N.en, {
       if (sameArea.length) h += '<h3>' + esc(t('sameArea')) + '</h3><div class="chips">' + sameArea.map(function (c) { return '<button class="chip" data-act="pcourse-to:' + esc(c.id) + '">' + esc(c.name) + '</button>'; }).join('') + '</div>';
     }
     if (cur && cur.kind === 'saved') {
-      h += '<h3>' + esc(t('chooseTee')) + '</h3><div class="choices">' + cur.course.tees.map(function (te, i) {
+      h += '<h3>' + esc(t('chooseTee')) + '</h3>' + teeRows(cur.course, playerGender(), '18', pl.teeId || cur.course.tees[0].id, 'ptee') + '<div hidden>' + [].map(function (te, i) {
         var on = (pl.teeId || cur.course.tees[0].id) === te.id;
         return '<button class="choice' + (on ? ' on' : '') + '" data-act="ptee:' + te.id + '"><strong>' + esc(te.name) + (te.color ? ' <small>' + esc(te.color) + '</small>' : '') + '</strong><small>' + esc(ratingLine(te, playerGender(), '18')) + ' · Par ' + C.sumPar(te.holes) + '</small>' + ratingBadge(te, playerGender(), '18') + '</button>';
       }).join('') + '</div>';
@@ -5052,6 +5387,154 @@ Object.assign(window.I18N.en, {
     var aEl = document.createElement('a'); aEl.href = URL.createObjectURL(blob); aEl.download = name; document.body.appendChild(aEl); aEl.click(); aEl.remove();
   }
 
+  // ======================= PREMIUMDESIGN: VYER =======================
+  // Höjdkurvor (som på en banguide) – egen illustration, ritas en gång.
+  var CONTOURS = (function () {
+    var paths = '';
+    for (var k = 0; k < 9; k++) {
+      var y = 40 + k * 34, a = 14 + k * 3, d = 'M-20 ' + y;
+      for (var x = 0; x <= 440; x += 40) d += ' Q' + (x + 20) + ' ' + (y + (((x / 40 + k) % 2) ? a : -a)) + ' ' + (x + 40) + ' ' + y;
+      paths += '<path d="' + d + '"/>';
+    }
+    return '<svg class="contours" viewBox="0 0 400 360" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g fill="none" stroke="#C9A65A" stroke-opacity=".22" stroke-width="1">' + paths +
+      '<ellipse cx="318" cy="92" rx="54" ry="34"/><ellipse cx="318" cy="92" rx="34" ry="20"/><ellipse cx="318" cy="92" rx="15" ry="8"/></g></svg>';
+  })();
+  function sparkSvg(vals, w, h) {
+    var pts = vals.filter(function (v) { return v !== null && v !== undefined; });
+    if (pts.length < 2) return '';
+    w = w || 300; h = h || 56;
+    var min = Math.min.apply(null, pts), max = Math.max.apply(null, pts); if (max - min < 1) { max += .5; min -= .5; }
+    var step = (w - 8) / (pts.length - 1);
+    var xy = pts.map(function (v, i) { return [4 + i * step, h - 6 - (v - min) / (max - min) * (h - 14)]; });
+    var line = xy.map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ');
+    var last = xy[xy.length - 1];
+    return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true"><polygon class="ar" points="4,' + h + ' ' + line + ' ' + (w - 4) + ',' + h + '"/><polyline class="ln" points="' + line + '"/><circle class="dt" cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="3.5"/></svg>';
+  }
+  function hiDelta() {
+    var hh = state.profile.hiHistory || [];
+    if (hh.length < 2) return null;
+    var first = hh[0], last = hh[hh.length - 1];
+    return { d: Math.round((last.hi - first.hi) * 10) / 10, since: first.d };
+  }
+
+  function viewHome3() {
+    var p = state.profile, first = (p.name || '').split(' ')[0], ar = activeRound(), h = '';
+    h += '<header class="home3">' + CONTOURS + '<div class="h3-top"><button class="h3-av" data-act="tab:profile" aria-label="' + esc(t('navProfile')) + '">' + esc(initials(p.name)) + '</button><span class="h3-brand">Banboken</span></div>';
+    h += '<h1 class="h3-greet">' + esc(greeting()) + (first ? ', ' + esc(first) : '') + '</h1>';
+    if (p.hi !== null) {
+      var dl = hiDelta();
+      h += '<div class="h3-hcp"><b>' + esc(C.formatHandicap(p.hi)) + '</b><span>' + esc(t('handicapIndex')) + (dl && dl.d ? '<em>' + (dl.d < 0 ? '−' : '+') + esc(dec(Math.abs(dl.d))) + ' ' + esc(t('sinceDate')) + ' ' + esc(fmtDate(dl.since)) + '</em>' : '') + '</span></div>';
+    }
+    h += '<div class="h3-cta">' + (ar
+      ? '<button class="btn lux big" data-act="tab:round">' + esc(t('resumeRound')) + ' · ' + esc(t('hole')) + ' ' + holeNo(ar, ar.current) + '</button>'
+      : '<button class="btn lux big" data-act="play">' + esc(t('startRound')) + '</button>') + '</div></header>';
+    h += '<main class="page home">';
+    if (!profileReady()) h += '<section class="card"><p class="title">' + esc(t('welcomeTitle')) + '</p><p class="sub">' + esc(t('welcomeText')) + '</p><div class="actions"><button class="btn gold" data-act="tab:profile">' + esc(t('startHere')) + '</button></div></section>';
+    if (ar) {
+      var as = C.summarizeRound(ar, ar.tee);
+      h += '<button class="live-card" data-act="tab:round"><span><small>' + esc(t('ongoing')) + '</small><b>' + esc(ar.courseName) + '</b><small>' + esc(t('hole')) + ' ' + holeNo(ar, ar.current) + ' · ' + esc(t('resumeRound')) + '</small></span><strong>' + (as.played ? signed(as.toPar) : '–') + '</strong></button>';
+    }
+    var done = doneRounds(), own = done.filter(function (r) { return r.mode !== 'team' && !r.shared; });
+    if (done.length) {
+      var lr = done[0], lc = courseById(lr.courseId), ls = metricsOf(lr).s;
+      h += '<section class="card"><h3>' + esc(t('lastPlayed')) + '</h3><p class="title">' + esc(lr.courseName) + '</p><p class="sub">' + esc(fmtDate(lr.date)) + ' · ' + esc(lr.tee.name) +
+        (lr.mode === 'team' ? '' : ' · ' + ls.gross + ' ' + esc(t('strokesShort')) + ' · ' + ls.points + ' p') + '</p><div class="actions">' +
+        (lc && !ar ? '<button class="btn gold" data-act="play-again:' + lc.id + '">' + esc(t('playAgain')) + '</button>' : '') +
+        '<button class="btn ghost" data-act="round:' + lr.id + '">' + esc(t('toScorecard')) + '</button></div></section>';
+    }
+    if (own.length >= 2) {
+      var ms = own.slice(0, 10).map(metricsOf), pts = ms.filter(function (m) { return !m.s.nine; }).map(function (m) { return m.s.points; }).reverse();
+      var a = C.aggregate(ms.map(function (m) { return m.s; }), 10);
+      h += '<button class="card devcard" data-act="tab:stats" style="display:block;width:100%;text-align:left;border:0"><h3>' + esc(t('yourDev')) + '</h3>' + sparkSvg(pts) +
+        '<div class="dev"><div><b>' + dec(a.avgPoints) + '</b><small>' + esc(t('avgPoints')) + '</small></div><div><b>' + dec(a.avgGross) + '</b><small>' + esc(t('avgScore')) + '</small></div><div><b>' + own.length + '</b><small>' + esc(t('roundsPlayed')) + '</small></div></div></button>';
+    }
+    h += '<div class="sec-h"><h2>' + esc(t('roundsTitle')) + '</h2>' + (done.length ? '<button class="link" data-act="tab:stats">' + esc(t('showAllShort')) + '</button>' : '') + '</div>';
+    if (!done.length) h += '<div class="rcard empty"><p>' + esc(t('firstRoundHint')) + '</p></div>';
+    else h += '<div class="rcards">' + done.slice(0, 10).map(function (r) {
+      var big = r.mode === 'team' ? t('teamShort') : (function () { var s = metricsOf(r).s; return s.played ? signed(s.toPar) : '–'; })();
+      return '<button class="rcard" data-act="round:' + r.id + '"><b>' + esc(r.courseName) + '</b><small>' + esc(fmtDate(r.date)) + '</small><small>' + esc(r.nine ? t('hm_' + r.nine) : (r.games && r.games.length ? r.games.map(function (g) { return t('g_' + g.type); }).join(', ') : t(r.format === 'stroke' ? 'strokePlay' : 'stableford'))) + '</small><strong>' + esc(big) + '</strong></button>';
+    }).join('') + '</div>';
+    h += weatherBlock(homeWeatherCourse());
+    return h + '</main>';
+  }
+
+  // Ikoner för kartknapparna (egna, tunna linjer)
+  var ICON = {
+    follow: '<svg viewBox="0 0 24 24"><path d="M12 3l7 18-7-4-7 4z"/></svg>',
+    center: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>',
+    green: '<svg viewBox="0 0 24 24"><path d="M6 21V4"/><path d="M6 4l10 3.5L6 11"/><ellipse cx="12" cy="20" rx="8" ry="2"/></svg>',
+    hole: '<svg viewBox="0 0 24 24"><path d="M7 21c0-6 10-6 10-12V3"/><path d="M17 3l4 1.5-4 1.5"/><circle cx="7" cy="21" r="1"/></svg>',
+    layers: '<svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>',
+    sun: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>'
+  };
+  function distHtml(r, x) {
+    var gi = greenInfo(x.hole, x.from), stale = !x.fromTee && gpsQ() === 'lost';
+    return '<div class="plate dist3' + (stale ? ' stale' : '') + '">' + d3('frontEdge', gi.front) + d3('midGreen', gi.mid, !gi.exact, true) + d3('backEdge', gi.back) + '</div>';
+  }
+  var TEE_COLORS = { gul: '#E2B33C', yellow: '#E2B33C', rod: '#B83A2E', red: '#B83A2E', bla: '#2F64A8', blue: '#2F64A8', vit: '#F4F2EC', white: '#F4F2EC', svart: '#222', black: '#222', gron: '#2E7D4F', green: '#2E7D4F', orange: '#E07B2A', guld: '#C9A65A', gold: '#C9A65A', silver: '#B9BDBF', lila: '#7B4FA0' };
+  function teeColor(te) {
+    var keys = [te.color, te.name].map(function (v) { return RT.fold(v); });
+    for (var i = 0; i < keys.length; i++) for (var k in TEE_COLORS) if (keys[i] && keys[i].indexOf(k) >= 0) return TEE_COLORS[k];
+    return 'var(--line-strong)';
+  }
+  function teeRows(c, gender, mode, selId, act) {
+    return '<div class="teepick">' + c.tees.map(function (te) {
+      var r = gender ? RT.ratingFor(te, gender, mode) : (te.ratings ? null : RT.ratingFor(te, null, mode)), len = teeLength(te, mode);
+      var par = C.sumPar(mode === '18' ? te.holes : mode === 'front9' ? te.holes.slice(0, 9) : te.holes.slice(9, 18));
+      return '<button class="teerow choice' + (selId === te.id ? ' on' : '') + '" data-act="' + act + ':' + te.id + '"><span class="teedot" style="background:' + teeColor(te) + '"></span><strong>' + esc(te.name) + (te.color && RT.fold(te.color) !== RT.fold(te.name) ? ' <small>' + esc(te.color) + '</small>' : '') + '</strong>' + ratingBadge(te, gender, mode) +
+        '<span class="tmeta">' + (len ? '<span><b>' + len + '</b> m</span>' : '') + '<span>Par <b>' + par + '</b></span>' +
+        (r ? '<span>CR <b>' + dec(r.cr) + '</b></span><span>Slope <b>' + r.slope + '</b></span>' : '<span>' + esc(!gender && te.ratings ? t('chooseGenderShort') : fmt(t('noRatingFor'), { g: gender ? genderName(gender).toLowerCase() : '', h: t('hm_' + mode).toLowerCase() })) + '</span>') + '</span></button>';
+    }).join('') + '</div>';
+  }
+  function courseList(s) {
+    var q = RT.fold(view.setupQ || ''), fav = state.favCourses || [], last = {};
+    state.rounds.forEach(function (r) { if (!last[r.courseId] || r.date > last[r.courseId]) last[r.courseId] = r.date; });
+    var list = state.courses.filter(function (c) { return !q || RT.fold(c.name + ' ' + (c.club || '')).indexOf(q) >= 0; });
+    function card(c) {
+      var isFav = fav.indexOf(c.id) >= 0;
+      return '<div class="ccard' + (s.courseId === c.id ? ' on' : '') + '" data-act="pick-course:' + c.id + '" role="button" tabindex="0"><b>' + esc(c.name) + '</b>' +
+        '<button class="star' + (isFav ? ' on' : '') + '" data-act="fav:' + c.id + '" aria-label="' + esc(t('favorite')) + '" aria-pressed="' + isFav + '">' + (isFav ? '★' : '☆') + '</button>' +
+        '<small>' + esc([c.club, c.tees.length + ' tee', last[c.id] ? t('lastPlayedShort') + ' ' + fmtDate(last[c.id]) : ''].filter(Boolean).join(' · ')) + '</small><span class="tags">' + badge(c) + '</span></div>';
+    }
+    var favs = list.filter(function (c) { return fav.indexOf(c.id) >= 0; });
+    var recent = list.filter(function (c) { return fav.indexOf(c.id) < 0 && last[c.id]; }).sort(function (a, b) { return last[b.id] < last[a.id] ? -1 : 1; }).slice(0, 5);
+    var rest = list.filter(function (c) { return favs.indexOf(c) < 0 && recent.indexOf(c) < 0; }).sort(function (a, b) { return a.name.localeCompare(b.name, 'sv'); });
+    var h = '';
+    if (favs.length) h += '<p class="grp-h">' + esc(t('favorites')) + '</p>' + favs.map(card).join('');
+    if (recent.length) h += '<p class="grp-h">' + esc(t('recentCourses')) + '</p>' + recent.map(card).join('');
+    if (rest.length) h += '<p class="grp-h">' + esc(favs.length || recent.length ? t('allCourses') : t('chooseCourse')) + '</p>' + rest.map(card).join('');
+    return h || '<p class="muted">' + esc(t('noResults')) + '</p>';
+  }
+  function scoreDist(rounds) {
+    var c = { eagle: 0, birdie: 0, par: 0, bogey: 0, dbl: 0 }, n = 0;
+    rounds.forEach(function (r) {
+      if (r.mode === 'team') return;
+      r.tee.holes.forEach(function (h, i) {
+        var d = r.holes[i] || {}; if (typeof d.strokes !== 'number' || d.pickedUp) return;
+        var x = d.strokes - h.par; n++;
+        if (x <= -2) c.eagle++; else if (x === -1) c.birdie++; else if (x === 0) c.par++; else if (x === 1) c.bogey++; else c.dbl++;
+      });
+    });
+    return { c: c, n: n };
+  }
+  function statsDash(rounds, n) {
+    var own = rounds.filter(function (r) { return r.mode !== 'team' && !r.shared; }), list = own.slice(0, n), ms = list.map(metricsOf);
+    var a = C.aggregate(ms.map(function (m) { return m.s; }), n), hh = state.profile.hiHistory || [], h = '<div class="dash">';
+    h += '<div class="tile hero"><small>' + esc(t('hcpDev')) + '</small><b>' + esc(state.profile.hi === null ? '–' : C.formatHandicap(state.profile.hi)) + '</b>' +
+      (hh.length >= 2 ? sparkSvg(hh.slice(-20).map(function (x) { return x.hi; })) : '<small>' + esc(t('hcpDevEmpty')) + '</small>') + '</div>';
+    h += '<div class="tile"><small>' + esc(t('roundsPlayed')) + '</small><b>' + own.length + '</b></div>' +
+      '<div class="tile"><small>' + esc(t('avgScore')) + '</small><b>' + dec(a.avgGross) + '</b></div>' +
+      '<div class="tile"><small>' + esc(t('avgPoints')) + '</small><b>' + dec(a.avgPoints) + '</b></div>' +
+      '<div class="tile"><small>' + esc(t('avgPutts')) + '</small><b>' + dec(a.avgPutts) + '</b></div></div>';
+    var sd = scoreDist(list);
+    if (sd.n) {
+      var keys = ['eagle', 'birdie', 'par', 'bogey', 'dbl'];
+      h += '<section class="card"><h3>' + esc(t('scoreDist')) + '</h3><div class="distbar">' + keys.map(function (k) { return '<i class="dl-' + k + '" style="width:' + (sd.c[k] / sd.n * 100).toFixed(1) + '%"></i>'; }).join('') + '</div>' +
+        '<div class="distleg">' + keys.map(function (k) { return '<span><b>' + dec(sd.c[k] / Math.max(1, list.length), 1) + '</b>' + esc(t('sd_' + k)) + '</span>'; }).join('') + '</div><p class="note">' + esc(t('perRound')) + '</p></section>';
+    }
+    return h;
+  }
+
   var state = load();
   var storageOk = true;
   function saveLocalOnly() {
@@ -5239,8 +5722,8 @@ Object.assign(window.I18N.en, {
       if (s.playType === 'match' && !(s.extra || []).length) h += '<p class="note">' + esc(t('matchNeedsPlayers')) + '</p>';
       if (s.training) h += '<p class="note">' + esc(t('trainingNote')) + '</p>';
     } else {
-    h += '<section class="block"><h3>' + esc(t('chooseCourse')) + '</h3><div class="choices">';
-    state.courses.forEach(function (c) {
+    h += '<section class="block"><h3>' + esc(t('chooseCourse')) + '</h3><div class="coursefind"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input data-field="setup.q" value="' + esc(view.setupQ || '') + '" placeholder="' + esc(t('searchCourses')) + '" autocorrect="off"></div><div id="setup-courses">' + courseList(s) + '</div><div class="choices" hidden>';
+    [].forEach(function (c) {
       h += '<button class="choice' + (s.courseId === c.id ? ' on' : '') + '" data-act="pick-course:' + c.id + '"><strong>' + esc(c.name) + '</strong><small>' + esc(c.club || '') + '</small>' + badge(c) + '</button>';
     });
     h += '</div>';
@@ -5251,11 +5734,10 @@ Object.assign(window.I18N.en, {
       if (c.demo) h += '<p class="warn">' + esc(t('demoWarning')) + '</p>';
       var gender = playerGender(), mode = s.holesMode || '18';
       if (!gender) h += '<section class="block"><h3>' + esc(t('ratingGender')) + '</h3><p class="note">' + esc(t('genderWhy')) + '</p><div class="seg">' + ['men', 'women'].map(function (g) { return '<button data-act="p-gender:' + g + '">' + esc(genderName(g)) + '</button>'; }).join('') + '</div></section>';
-      h += '<section class="block"><h3>' + esc(t('chooseTee')) + '</h3><div class="choices">';
-      c.tees.forEach(function (te) {
-        h += '<button class="choice' + (s.teeId === te.id ? ' on' : '') + '" data-act="pick-tee:' + te.id + '"><strong>' + esc(te.name) + (te.color ? ' <small>' + esc(te.color) + '</small>' : '') + '</strong><small>' + esc(ratingLine(te, gender, mode)) + ' · Par ' + C.sumPar(mode === '18' ? te.holes : mode === 'front9' ? te.holes.slice(0, 9) : te.holes.slice(9, 18)) + '</small>' + ratingBadge(te, gender, mode) + '</button>';
+      h += '<section class="block"><h3>' + esc(t('chooseTee')) + '</h3><div hidden>';
+      [].forEach(function (te) {
       });
-      h += '</div></section>';
+      h += '</div>' + teeRows(c, gender, mode, s.teeId, 'pick-tee') + '</section>';
       var te = s.teeId && c.tees.filter(function (x) { return x.id === s.teeId; })[0];
       if (te) {
         var allowance = s.allowance || state.profile.allowance;
@@ -5320,10 +5802,11 @@ Object.assign(window.I18N.en, {
 
   function holeView(r, s) {
     var i = r.current, hole = r.tee.holes[i], d = r.holes[i], rec = s.allocation[i];
-    var h = '<section class="hole-head"><div class="hole-no"><small>' + esc(t('hole')) + '</small><span>' + holeNo(r, i) + '</span></div>' +
+    var h = '<section class="hole-head"><button class="navbtn" data-act="go:' + (i - 1) + '"' + (i === 0 ? ' disabled' : '') + ' aria-label="' + esc(t('prev')) + '">‹</button><div class="hole-no"><small>' + esc(t('hole')) + '</small><span>' + holeNo(r, i) + '</span></div>' +
       '<dl><div><dt>' + esc(t('par')) + '</dt><dd>' + hole.par + '</dd></div><div><dt>' + esc(t('si')) + '</dt><dd>' + hole.si + '</dd></div>' +
       '<div><dt>' + esc(t('length')) + '</dt><dd>' + (hole.length ? hole.length + ' m' : '–') + '</dd></div>' +
-      '<div><dt>' + esc(t('received')) + '</dt><dd>' + (rec > 0 ? '+' + rec : rec) + '</dd></div></dl></section>';
+      '<div><dt>' + esc(t('received')) + '</dt><dd>' + (rec > 0 ? '+' + rec : rec) + '</dd></div></dl>' +
+      '<button class="navbtn" data-act="go:' + (i + 1) + '"' + (i >= r.tee.holes.length - 1 ? ' disabled' : '') + ' aria-label="' + esc(t('next')) + '">›</button></section>';
     h += '<section id="gps-box" class="gps">' + gpsInner(r) + '</section>';
 
     if (r.mode === 'team') { h += teamEntries(r); } else {
@@ -5335,14 +5818,14 @@ Object.assign(window.I18N.en, {
     h += '<section class="entry"><h3>' + esc(t('strokes')) + '</h3><div class="pick strokes">';
     for (var v = lo; v <= hi; v++) {
       var cls = v - hole.par;
-      h += '<button class="' + (cur === v && !d.pickedUp ? 'on ' : '') + (cls < 0 ? 'under' : cls === 0 ? 'par' : 'over') + '" data-act="strokes:' + v + '">' + v + '</button>';
+      h += '<button class="' + (cur === v && !d.pickedUp ? 'on ' + (view.justSet === 'strokes:' + v ? 'pop ' : '') : '') + (cls < 0 ? 'under' : cls === 0 ? 'par' : 'over') + '" data-act="strokes:' + v + '">' + v + '</button>';
     }
     h += '<button class="more" data-act="strokes:' + ((typeof cur === 'number' ? Math.max(cur, hi) : hi) + 1) + '" aria-label="+1">+</button></div>' +
       '<button class="link' + (d.pickedUp ? ' on' : '') + '" data-act="pickup">' + esc(d.pickedUp ? t('pickedUp') + ' ✓' : t('pickUp')) + '</button></section>';
 
     // Puttar
     h += '<section class="entry"><h3>' + esc(t('putts')) + '</h3><div class="pick">';
-    [0, 1, 2, 3, 4].forEach(function (p) { h += '<button class="' + (d.putts === p ? 'on' : '') + '" data-act="putts:' + p + '">' + p + (p === 4 ? '+' : '') + '</button>'; });
+    [0, 1, 2, 3, 4].forEach(function (p) { h += '<button class="' + (d.putts === p ? 'on' + (view.justSet === 'putts:' + p ? ' pop' : '') : '') + '" data-act="putts:' + p + '">' + p + (p === 4 ? '+' : '') + '</button>'; });
     h += '</div></section>';
 
     // Fairway (par 4 och 5)
@@ -5508,12 +5991,12 @@ Object.assign(window.I18N.en, {
     var rounds = doneRounds(), sums = rounds.filter(function (r) { return r.mode !== 'team' && !r.shared; }).map(function (r) { return metricsOf(r).s; });
     var n = state.ui.statsN, a = C.aggregate(sums, n);
     var h = header(t('stats')) + '<main class="page">';
+    if (rounds.length) h += statsDash(rounds, n);
     h += '<h3 class="seg-h">' + esc(t('lastN')) + ' … ' + esc(t('rounds')) + '</h3><div class="seg">' + [5, 10, 20, 50].map(function (x) { return '<button class="' + (n === x ? 'on' : '') + '" data-act="statsn:' + x + '">' + x + '</button>'; }).join('') + '</div>';
     if (!rounds.length) {
       h += '<p class="muted">' + esc(t('noRounds')) + '</p>';
     } else {
-      h += '<dl class="kpis">' + kpi(t('avgScore'), dec(a.avgGross)) + kpi(t('avgPoints'), dec(a.avgPoints)) + kpi(t('avgPutts'), dec(a.avgPutts)) +
-        kpi(t('firPct'), a.firPct === null ? '–' : Math.round(a.firPct) + ' %') + kpi(t('girPct'), a.girPct === null ? '–' : Math.round(a.girPct) + ' %') + kpi(t('avgPen'), dec(a.avgPen)) + '</dl>';
+      h += '<dl class="kpis">' + kpi(t('firPct'), a.firPct === null ? '–' : Math.round(a.firPct) + ' %') + kpi(t('girPct'), a.girPct === null ? '–' : Math.round(a.girPct) + ' %') + kpi(t('avgPen'), dec(a.avgPen)) + '</dl>';
       h += '<p class="note">' + esc(a.rounds) + ' ' + esc(t('rounds')) + '</p>';
       var ownR = rounds.filter(function (r) { return r.mode !== 'team' && !r.shared; });
       h += statsExtra(ownR, n) + sgSection(ownR);
@@ -5584,14 +6067,17 @@ Object.assign(window.I18N.en, {
     if (view.tab === 'live' && live.viewer) body = viewLive();
     else if (view.tab === 'shared' && view.shared) body = viewShared();
     else if (view.tab === 'play' && view.play) body = viewPlay();
-    else if (view.tab === 'home') body = view.sub === 'setup' ? viewSetup() : viewHome2();
+    else if (view.tab === 'home') body = view.sub === 'setup' ? viewSetup() : viewHome3();
     else if (view.tab === 'round') body = view.sub === 'setup' ? viewSetup() : viewRound();
     else if (view.tab === 'courses') body = view.sub === 'edit' ? viewCourseEdit() : viewCourses();
     else if (view.tab === 'stats') body = viewStats();
     else body = view.sub === 'setup' ? viewSetup() : view.sub === 'admin' ? viewAdmin() : viewProfile();
     var warn = storageOk ? '' : '<p class="warn tight">Lagringen är full eller blockerad – exportera dina data.</p>';
     appEl.className = view.tab === 'play' ? 'playmode' : '';
+    var vkey = view.tab + ':' + (view.sub || '') + ':' + (view.holeMode || '');
+    var entering = vkey !== view.lastVkey; view.lastVkey = vkey;
     appEl.innerHTML = body + warn + flash() + (view.tab === 'play' ? '' : nav2());
+    if (entering) { var mn = appEl.querySelector('main'); if (mn) mn.classList.add('enter'); }
     manageTimers();
     var inPlay = view.tab === 'round' && !view.sub && activeRound() && view.holeMode === 'hole';
     if (inPlay) {
@@ -5647,9 +6133,9 @@ Object.assign(window.I18N.en, {
         if (view.setup.training) state.ui.shotLog = true;
         gps.target = null; gps.suggest = null; gps.lastAuto = null; save(); view.tab = 'round'; view.sub = null; view.holeMode = 'hole'; window.scrollTo(0, 0); break;
       }
-      case 'strokes': updateHole(function (d) { d.strokes = +v; d.pickedUp = false; if (typeof d.putts === 'number' && d.putts > d.strokes) d.putts = d.strokes; }); return;
+      case 'strokes': view.justSet = act; setTimeout(function () { view.justSet = null; }, 300); updateHole(function (d) { d.strokes = +v; d.pickedUp = false; if (typeof d.putts === 'number' && d.putts > d.strokes) d.putts = d.strokes; }); return;
       case 'pickup': updateHole(function (d) { d.pickedUp = !d.pickedUp; if (d.pickedUp) delete d.strokes; }); return;
-      case 'putts': updateHole(function (d) { d.putts = +v; if (typeof d.strokes === 'number' && d.strokes < d.putts) d.strokes = d.putts; }); return;
+      case 'putts': view.justSet = act; setTimeout(function () { view.justSet = null; }, 300); updateHole(function (d) { d.putts = +v; if (typeof d.strokes === 'number' && d.strokes < d.putts) d.strokes = d.putts; }); return;
       case 'fir': updateHole(function (d) { d.fir = d.fir === v ? undefined : v; }); return;
       case 'miss': updateHole(function (d) { d.miss = d.miss === v ? undefined : v; }); return;
       case 'inc': updateHole(function (d) { d[v] = (d[v] || 0) + 1; }); return;
@@ -5871,6 +6357,9 @@ Object.assign(window.I18N.en, {
       case 'adm-export': shareFile('slopetabell-' + new Date().toISOString().slice(0, 10) + '.csv', libCsv(), 'text/csv'); return;
       case 'adm-pull': pullShared(false); return;
       case 'adm-push': pushShared(); return;
+      case 'fav': { var fv = state.favCourses = state.favCourses || [], fi = fv.indexOf(v); if (fi >= 0) fv.splice(fi, 1); else fv.push(v); save(); var sc2 = document.getElementById('setup-courses'); if (sc2 && view.setup) { sc2.innerHTML = courseList(view.setup); return; } break; }
+      case 'play-again': { var pc0 = courseById(v); if (pc0) { view.play = { step: 'course', type: 0, idx: 0, pos: null }; goSetupFromPlay(pc0, null); } break; }
+      case 'sat-toggle': state.ui.sat = !state.ui.sat; save(); gps.boxKey = null; refreshGps(true); return;
       case 'hole-mode': view.holeMode = view.holeMode === 'hole' ? 'card' : 'hole'; window.scrollTo(0, 0); break;
       case 'finish': {
         if (!r) break;
@@ -5950,6 +6439,7 @@ Object.assign(window.I18N.en, {
     if (key.indexOf('add.') === 0) { view.setup.add[key.slice(4)] = val; return; }
     if (key.indexOf('cloud.') === 0) { cloudForm[key.slice(6)] = val; return; }
     if (key === 'live.code') { view.liveCode = val; return; }
+    if (key === 'setup.q') { if (view.setupQ === val) return; view.setupQ = val; var scl = document.getElementById('setup-courses'); if (scl && view.setup) scl.innerHTML = courseList(view.setup); return; }
     if (key === 'play.q') { if (view.play.q === val) return; view.play.q = val; var pr = document.getElementById('play-results'); if (pr) pr.innerHTML = playResults(); return; }
     if (key === 'dir.q') { if (view.dirQ === val) return; view.dirQ = val; var dl = document.getElementById('dir-list'); if (dl) dl.innerHTML = dirListHtml(); return; }
     if (key === 'adm.pin' || key === 'adm.pin2') { adminUi[key.slice(4)] = val; return; }
@@ -5995,7 +6485,14 @@ Object.assign(window.I18N.en, {
       if (pk === 'hi') {
         var hi = C.parseHandicapIndex(val);
         view.hiError = val.trim() !== '' && hi === null;
-        if (!view.hiError) state.profile.hi = hi;
+        if (!view.hiError && hi !== state.profile.hi) {
+          state.profile.hi = hi;
+          if (hi !== null) {
+            var hh = state.profile.hiHistory = state.profile.hiHistory || [], today = new Date().toISOString().slice(0, 10);
+            if (hh.length && hh[hh.length - 1].d === today) hh[hh.length - 1].hi = hi; else hh.push({ d: today, hi: hi });
+            if (hh.length > 120) hh.splice(0, hh.length - 120);
+          }
+        }
       } else state.profile[pk] = val;
       save(); render(); return;
     }
@@ -6029,7 +6526,7 @@ Object.assign(window.I18N.en, {
     document.addEventListener('change', function (e) { if (e.target.hasAttribute('data-field')) onField(e.target); });
     document.addEventListener('input', function (e) {
       var k = e.target.getAttribute('data-field');
-      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code' || k === 'dir.q' || k === 'play.q' || k === 'adm.pin' || k === 'adm.pin2' || k === 'adm.text' || (k && k.indexOf('admf.') === 0))) onField(e.target);
+      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code' || k === 'dir.q' || k === 'play.q' || k === 'setup.q' || k === 'adm.pin' || k === 'adm.pin2' || k === 'adm.text' || (k && k.indexOf('admf.') === 0))) onField(e.target);
     });
     window.addEventListener('pagehide', save);
     document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.getAttribute && e.target.getAttribute('data-field') === 'find.q') { view.find.q = e.target.value; searchCourses(view.find.q); } });

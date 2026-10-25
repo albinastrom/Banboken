@@ -111,6 +111,13 @@ Coachen i etapp 4 är regelbaserad och gratis. En språkmodell (t.ex. Claude via
 
 Course Rating och Slope finns inte i öppna data (de ägs av Svenska Golfförbundet). Nya banor sparas därför som *CR/Slope saknas*: du kan spela direkt med GPS och bruttoscore. Fyll i CR och Slope från scorekortet, klubbens hemsida eller Min Golf, så räknas handicap från nästa rond. Matcher med handicap kräver CR och Slope.
 
+## Design – Scandinavian Luxury Golf
+- **Färger:** Deep Forest #103D2F, Midnight Green #09281F, Champagne Gold #C9A65A (bara detaljer och aktiv navigering), Warm Ivory #F8F6F0, Soft Sage #DDE6DF, Charcoal #202622. Mörkt läge följer telefonen.
+- **Typografi:** Newsreader (serif) för rubriker, bannamn och hålnummer; Hanken Grotesk med tabellsiffror för knappar, avstånd, score och statistik.
+- **GPS-vyn:** satellitkartan i full bredd med en flytande avståndsplakett (fram / mitt / bak, mitt störst), GPS-status uppe till vänster och kartknappar (följ mig, centrera, green/hela hålet, satellit, skärm tänd) uppe till höger. Föregående/nästa hål i hålhuvudet.
+- **Komponenter:** knappar, chips, kort, segmentväljare, tee-rader med färgprick, banor med favoritstjärna, statistikpaneler, scorekort med symboler för eagle/birdie/bogey/dubbel.
+- **Rörelse:** korta övergångar vid byte av vy, återkoppling när slag registreras, diskret markering när avståndet ändras. Allt stängs av om telefonen har "Reducera rörelse" påslaget.
+
 ## Tee, Course Rating och Slope
 **Datakälla:** officiella slopetabeller ägs av Svenska Golfförbundet och finns bara via deras GIT API, som kräver avtal. Ingen öppen och tillåten källa finns, så appen hämtar inga värden automatiskt och hittar aldrig på värden. I stället finns en slopetabell som du fyller med verifierade uppgifter (klubbens scorekort/slopetabell).
 
