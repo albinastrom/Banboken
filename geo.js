@@ -307,6 +307,45 @@
     return left.concat(right.reverse());
   }
 
+
+  // ---------- Banregister (alla golfbanor i ett land från OpenStreetMap) ----------
+  function fold(s) {
+    return String(s || '').toLowerCase().replace(/[åä]/g, 'a').replace(/ö/g, 'o').replace(/[éè]/g, 'e').replace(/ü/g, 'u');
+  }
+  function parseDirectory(json) {
+    var items = [], unnamed = 0;
+    (json.elements || []).forEach(function (e) {
+      var tg = e.tags || {}, b = e.bounds;
+      if (!b || !isFinite(b.minlat)) return;
+      if (tg.golf === 'driving_range' || tg.golf === 'miniature_golf' || tg.leisure === 'miniature_golf') return;
+      var name = tg.name || tg['name:sv'];
+      if (!name) { unnamed++; return; }
+      var lat = (b.minlat + b.maxlat) / 2, lon = (b.minlon + b.maxlon) / 2;
+      items.push({ n: String(name).slice(0, 80), t: e.type, id: e.id, lat: r6([lat, lon])[0], lon: r6([lat, lon])[1],
+        b: [b.minlat, b.minlon, b.maxlat, b.maxlon].map(function (v) { return Math.round(v * 1e5) / 1e5; }),
+        c: String(tg['addr:city'] || tg['addr:municipality'] || tg['is_in:municipality'] || '').slice(0, 40), h: intTag(tg.holes) });
+    });
+    // Samma bana kan finnas som både yta och relation – behåll en per namn inom 1,5 km.
+    items.sort(function (a, b) { return a.n.localeCompare(b.n, 'sv'); });
+    var out = [];
+    items.forEach(function (it) {
+      var dup = out.filter(function (o) { return fold(o.n) === fold(it.n) && dist([o.lat, o.lon], [it.lat, it.lon]) < 1500; })[0];
+      if (dup) { if (it.t === 'relation' && dup.t !== 'relation') out[out.indexOf(dup)] = it; return; }
+      out.push(it);
+    });
+    return { items: out, unnamed: unnamed };
+  }
+  function searchDirectory(items, q, pos, limit) {
+    var f = fold(q).trim(), list = items;
+    if (f) {
+      var words = f.split(/\s+/);
+      list = items.filter(function (it) { var hay = fold(it.n + ' ' + it.c); return words.every(function (w) { return hay.indexOf(w) >= 0; }); });
+    }
+    list = list.map(function (it) { return { it: it, d: pos ? dist(pos, [it.lat, it.lon]) : null }; });
+    if (pos) list.sort(function (a, b) { return a.d - b.d; });
+    return list.slice(0, limit || 60);
+  }
+
   // ---------- Kartplattor (Web Mercator) ----------
   function lon2tile(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
   function lat2tile(lat, z) { var r = lat * D; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z); }
@@ -317,7 +356,7 @@
     dist: dist, bearing: bearing, proj: proj, centroid: centroid, polylineInfo: polylineInfo, lineLength: lineLength,
     greenDistances: greenDistances, hazardsAhead: hazardsAhead, doglegs: doglegs, nearestHole: nearestHole,
     windRelative: windRelative, buildFromOsm: buildFromOsm, coverage: coverage, demoGeometry: demoGeometry,
-    pointInPolyXY: pointInPolyXY, lon2tile: lon2tile, lat2tile: lat2tile, tile2lon: tile2lon, tile2lat: tile2lat
+    pointInPolyXY: pointInPolyXY, parseDirectory: parseDirectory, searchDirectory: searchDirectory, fold: fold, lon2tile: lon2tile, lat2tile: lat2tile, tile2lon: tile2lon, tile2lat: tile2lat
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Geo;
   root.Geo = Geo;

@@ -94,10 +94,14 @@
   }
 
   // Sammanställning av en rond. round.holes[i] = { strokes, putts, fir, gir, penalties, bunker, pickedUp }
+  function teeRated(tee) { return typeof tee.cr === 'number' && isFinite(tee.cr) && typeof tee.slope === 'number' && isFinite(tee.slope); }
+
   function summarizeRound(round, tee) {
     var holes = tee.holes;
     var par = sumPar(holes);
-    var ch = courseHandicap(round.hi, tee.slope, tee.cr, par);
+    var rated = teeRated(tee);
+    // Utan CR/Slope går det inte att räkna handicap: ronden räknas som brutto (0 slag).
+    var ch = rated ? courseHandicap(round.hi, tee.slope, tee.cr, par) : 0;
     var ph = playingHandicap(ch, round.allowance);
     var alloc = strokeAllocation(ph, holes);
     var gross = 0, net = 0, points = 0, putts = 0, played = 0, parPlayed = 0;
@@ -129,7 +133,8 @@
       toPar: gross - parPlayed,
       firHit: firHit, firTot: firTot, girHit: girHit, girTot: girTot, penalties: pen,
       adjustedGross: ags,
-      differential: ags === null ? null : scoreDifferential(ags, tee.cr, tee.slope, 0)
+      differential: ags === null || !rated ? null : scoreDifferential(ags, tee.cr, tee.slope, 0),
+      unrated: !rated
     };
   }
 
@@ -155,8 +160,9 @@
   function validateTee(tee) {
     var errors = [];
     if (!tee.name) errors.push('tee-namn saknas');
-    if (!(tee.cr > 50 && tee.cr < 90)) errors.push('Course Rating ska vara mellan 50 och 90');
-    if (!(tee.slope >= 55 && tee.slope <= 155)) errors.push('Slope Rating ska vara mellan 55 och 155');
+    var skip = tee.unrated && (tee.cr === null || tee.cr === undefined) && (tee.slope === null || tee.slope === undefined);
+    if (!skip && !(tee.cr > 50 && tee.cr < 90)) errors.push('Course Rating ska vara mellan 50 och 90');
+    if (!skip && !(tee.slope >= 55 && tee.slope <= 155)) errors.push('Slope Rating ska vara mellan 55 och 155');
     if (!tee.holes || tee.holes.length !== 18) errors.push('18 hål krävs');
     else {
       var sis = tee.holes.map(function (h) { return h.si; }).slice().sort(function (a, b) { return a - b; });
@@ -174,7 +180,7 @@
     playingHandicap: playingHandicap, strokesOnHole: strokesOnHole, strokeAllocation: strokeAllocation,
     stablefordPoints: stablefordPoints, netDoubleBogey: netDoubleBogey, adjustedGross: adjustedGross,
     scoreDifferential: scoreDifferential, sumPar: sumPar, summarizeRound: summarizeRound,
-    aggregate: aggregate, validateTee: validateTee
+    aggregate: aggregate, validateTee: validateTee, teeRated: teeRated
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
   root.Core = Core;

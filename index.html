@@ -520,10 +520,14 @@ table.lb tr:first-child td{font-weight:600}
   }
 
   // Sammanställning av en rond. round.holes[i] = { strokes, putts, fir, gir, penalties, bunker, pickedUp }
+  function teeRated(tee) { return typeof tee.cr === 'number' && isFinite(tee.cr) && typeof tee.slope === 'number' && isFinite(tee.slope); }
+
   function summarizeRound(round, tee) {
     var holes = tee.holes;
     var par = sumPar(holes);
-    var ch = courseHandicap(round.hi, tee.slope, tee.cr, par);
+    var rated = teeRated(tee);
+    // Utan CR/Slope går det inte att räkna handicap: ronden räknas som brutto (0 slag).
+    var ch = rated ? courseHandicap(round.hi, tee.slope, tee.cr, par) : 0;
     var ph = playingHandicap(ch, round.allowance);
     var alloc = strokeAllocation(ph, holes);
     var gross = 0, net = 0, points = 0, putts = 0, played = 0, parPlayed = 0;
@@ -555,7 +559,8 @@ table.lb tr:first-child td{font-weight:600}
       toPar: gross - parPlayed,
       firHit: firHit, firTot: firTot, girHit: girHit, girTot: girTot, penalties: pen,
       adjustedGross: ags,
-      differential: ags === null ? null : scoreDifferential(ags, tee.cr, tee.slope, 0)
+      differential: ags === null || !rated ? null : scoreDifferential(ags, tee.cr, tee.slope, 0),
+      unrated: !rated
     };
   }
 
@@ -581,8 +586,9 @@ table.lb tr:first-child td{font-weight:600}
   function validateTee(tee) {
     var errors = [];
     if (!tee.name) errors.push('tee-namn saknas');
-    if (!(tee.cr > 50 && tee.cr < 90)) errors.push('Course Rating ska vara mellan 50 och 90');
-    if (!(tee.slope >= 55 && tee.slope <= 155)) errors.push('Slope Rating ska vara mellan 55 och 155');
+    var skip = tee.unrated && (tee.cr === null || tee.cr === undefined) && (tee.slope === null || tee.slope === undefined);
+    if (!skip && !(tee.cr > 50 && tee.cr < 90)) errors.push('Course Rating ska vara mellan 50 och 90');
+    if (!skip && !(tee.slope >= 55 && tee.slope <= 155)) errors.push('Slope Rating ska vara mellan 55 och 155');
     if (!tee.holes || tee.holes.length !== 18) errors.push('18 hål krävs');
     else {
       var sis = tee.holes.map(function (h) { return h.si; }).slice().sort(function (a, b) { return a - b; });
@@ -600,7 +606,7 @@ table.lb tr:first-child td{font-weight:600}
     playingHandicap: playingHandicap, strokesOnHole: strokesOnHole, strokeAllocation: strokeAllocation,
     stablefordPoints: stablefordPoints, netDoubleBogey: netDoubleBogey, adjustedGross: adjustedGross,
     scoreDifferential: scoreDifferential, sumPar: sumPar, summarizeRound: summarizeRound,
-    aggregate: aggregate, validateTee: validateTee
+    aggregate: aggregate, validateTee: validateTee, teeRated: teeRated
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Core;
   root.Core = Core;
@@ -915,6 +921,45 @@ table.lb tr:first-child td{font-weight:600}
     return left.concat(right.reverse());
   }
 
+
+  // ---------- Banregister (alla golfbanor i ett land från OpenStreetMap) ----------
+  function fold(s) {
+    return String(s || '').toLowerCase().replace(/[åä]/g, 'a').replace(/ö/g, 'o').replace(/[éè]/g, 'e').replace(/ü/g, 'u');
+  }
+  function parseDirectory(json) {
+    var items = [], unnamed = 0;
+    (json.elements || []).forEach(function (e) {
+      var tg = e.tags || {}, b = e.bounds;
+      if (!b || !isFinite(b.minlat)) return;
+      if (tg.golf === 'driving_range' || tg.golf === 'miniature_golf' || tg.leisure === 'miniature_golf') return;
+      var name = tg.name || tg['name:sv'];
+      if (!name) { unnamed++; return; }
+      var lat = (b.minlat + b.maxlat) / 2, lon = (b.minlon + b.maxlon) / 2;
+      items.push({ n: String(name).slice(0, 80), t: e.type, id: e.id, lat: r6([lat, lon])[0], lon: r6([lat, lon])[1],
+        b: [b.minlat, b.minlon, b.maxlat, b.maxlon].map(function (v) { return Math.round(v * 1e5) / 1e5; }),
+        c: String(tg['addr:city'] || tg['addr:municipality'] || tg['is_in:municipality'] || '').slice(0, 40), h: intTag(tg.holes) });
+    });
+    // Samma bana kan finnas som både yta och relation – behåll en per namn inom 1,5 km.
+    items.sort(function (a, b) { return a.n.localeCompare(b.n, 'sv'); });
+    var out = [];
+    items.forEach(function (it) {
+      var dup = out.filter(function (o) { return fold(o.n) === fold(it.n) && dist([o.lat, o.lon], [it.lat, it.lon]) < 1500; })[0];
+      if (dup) { if (it.t === 'relation' && dup.t !== 'relation') out[out.indexOf(dup)] = it; return; }
+      out.push(it);
+    });
+    return { items: out, unnamed: unnamed };
+  }
+  function searchDirectory(items, q, pos, limit) {
+    var f = fold(q).trim(), list = items;
+    if (f) {
+      var words = f.split(/\s+/);
+      list = items.filter(function (it) { var hay = fold(it.n + ' ' + it.c); return words.every(function (w) { return hay.indexOf(w) >= 0; }); });
+    }
+    list = list.map(function (it) { return { it: it, d: pos ? dist(pos, [it.lat, it.lon]) : null }; });
+    if (pos) list.sort(function (a, b) { return a.d - b.d; });
+    return list.slice(0, limit || 60);
+  }
+
   // ---------- Kartplattor (Web Mercator) ----------
   function lon2tile(lon, z) { return (lon + 180) / 360 * Math.pow(2, z); }
   function lat2tile(lat, z) { var r = lat * D; return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * Math.pow(2, z); }
@@ -925,7 +970,7 @@ table.lb tr:first-child td{font-weight:600}
     dist: dist, bearing: bearing, proj: proj, centroid: centroid, polylineInfo: polylineInfo, lineLength: lineLength,
     greenDistances: greenDistances, hazardsAhead: hazardsAhead, doglegs: doglegs, nearestHole: nearestHole,
     windRelative: windRelative, buildFromOsm: buildFromOsm, coverage: coverage, demoGeometry: demoGeometry,
-    pointInPolyXY: pointInPolyXY, lon2tile: lon2tile, lat2tile: lat2tile, tile2lon: tile2lon, tile2lat: tile2lat
+    pointInPolyXY: pointInPolyXY, parseDirectory: parseDirectory, searchDirectory: searchDirectory, fold: fold, lon2tile: lon2tile, lat2tile: lat2tile, tile2lon: tile2lon, tile2lat: tile2lat
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Geo;
   root.Geo = Geo;
@@ -1631,6 +1676,13 @@ table.lb tr:first-child td{font-weight:600}
     eq('Rond: justerat brutto', s.adjustedGross, 8 + (pars.slice(1, 17).reduce(function (a, b) { return a + b; }, 0) + 16) + 8);
     eq('Tee-validering godkänner korrekt tee', Core.validateTee(tee), []);
 
+    // Banor utan Course Rating/Slope: bara brutto
+    var ut = { name: 'Gul', cr: null, slope: null, unrated: true, holes: tee.holes };
+    eq('Tee utan CR/Slope godkänns när det är markerat', Core.validateTee(ut), []);
+    eq('Tee utan CR/Slope underkänns om det inte är markerat', Core.validateTee({ name: 'Gul', cr: null, slope: null, holes: tee.holes }).length, 2);
+    var us = Core.summarizeRound(round, ut);
+    eq('Rond utan CR/Slope: inga hcp-slag, ingen differential', [us.playingHandicap, us.differential, us.unrated, us.gross], [0, null, true, s.gross]);
+
 
     if (Geo) {
       var O = [57.0, 14.0], P = Geo.proj(O);
@@ -1680,6 +1732,17 @@ table.lb tr:first-child td{font-weight:600}
       eq('Närmaste hål', Geo.nearestHole(L(98, 400), geo.holes).ref, '2');
       var spec = []; for (var q = 0; q < 18; q++) spec.push({ par: 4, si: q + 1, length: 350 });
       var demo = Geo.demoGeometry([57.1, 14.1], spec);
+var dj = { elements: [
+        { type: 'way', id: 1, tags: { leisure: 'golf_course', name: 'Ullna Golf & Country Club', 'addr:city': 'Åkersberga' }, bounds: { minlat: 59.48, minlon: 18.15, maxlat: 59.50, maxlon: 18.18 } },
+        { type: 'relation', id: 2, tags: { leisure: 'golf_course', name: 'Ullna Golf & Country Club' }, bounds: { minlat: 59.481, minlon: 18.151, maxlat: 59.501, maxlon: 18.181 } },
+        { type: 'way', id: 3, tags: { leisure: 'golf_course', name: 'Österåkers GK' }, bounds: { minlat: 59.46, minlon: 18.30, maxlat: 59.47, maxlon: 18.32 } },
+        { type: 'way', id: 4, tags: { leisure: 'golf_course' }, bounds: { minlat: 59.0, minlon: 18.0, maxlat: 59.01, maxlon: 18.01 } },
+        { type: 'way', id: 5, tags: { leisure: 'golf_course', golf: 'driving_range', name: 'Range' }, bounds: { minlat: 59.0, minlon: 18.0, maxlat: 59.01, maxlon: 18.01 } }
+      ] };
+      var dir = Geo.parseDirectory(dj);
+      eq('Banregister: dubbletter slås ihop, range och namnlösa tas bort', [dir.items.length, dir.unnamed, dir.items[0].t], [2, 1, 'relation']);
+      eq('Banregister: sök utan å/ä/ö-krav', Geo.searchDirectory(dir.items, 'osteraker').map(function (x) { return x.it.n; }), ['Österåkers GK']);
+      eq('Banregister: sortering efter avstånd', Geo.searchDirectory(dir.items, '', [59.465, 18.31])[0].it.n, 'Österåkers GK');
       eq('Demo-geometri: 18 hål med green', Geo.coverage(demo).greens, 18);
     }
 
@@ -2234,6 +2297,30 @@ Object.assign(window.I18N.en, {
   badLiveCode: 'The code has 8 characters (A–Z and 2–9).', liveNotFound: 'The match does not exist or has expired (2 days).', liveLoading: 'Loading the match…', liveDone: 'finished',
   livePlayAs: 'I am playing as', liveSaving: 'Saving…', liveUnsent: 'Not sent yet – retrying.', liveSaved: 'Saved. The standings update automatically.', liveSendFailed: 'Could not send'
 });
+
+/* Alla banor i Sverige */
+Object.assign(window.I18N.sv, {
+  allSweden: 'Alla banor i Sverige', dirIntro: 'Hämta registret över Sveriges golfbanor från OpenStreetMap. Det sparas i telefonen, så du kan söka även utan täckning. Välj en bana så hämtas hål, greener och hinder.',
+  dirLoad: 'Hämta banregistret', dirLoading: 'Hämtar alla banor…', dirRefresh: 'Uppdatera registret', dirCount: '{n} banor', dirSearchPh: 'Sök bana eller ort',
+  sortNear: 'Närmast först', nearestFirst: 'Närmast först ✓', holesShort: 'hål', added: 'Tillagd', dirMore: 'Visar de 60 första – skriv mer i sökrutan för att hitta fler.',
+  dirUnnamed: '{n} banor utan namn i kartdata visas inte.', dirOther: 'Hittar du inte banan? Sök i OpenStreetMap',
+  dirRatingNote: 'Course Rating och Slope finns inte i öppna data – de står på banans scorekort, klubbens hemsida eller i Min Golf. Utan dem kan du ändå spela med GPS och bruttoscore.',
+  noRatingTag: 'CR/Slope saknas', defaultTee: 'Tee', unratedCheck: 'CR/Slope saknas – spela brutto tills vidare',
+  unratedHelp: 'Ronder räknas då utan handicapslag och utan score differential. Fyll i CR och Slope när du har dem, så räknas framtida ronder med handicap.',
+  unratedRound: 'Den här teen saknar Course Rating och Slope. Ronden räknas brutto – utan handicapslag, nettoresultat eller score differential.',
+  unratedBar: 'Bruttorond – CR/Slope saknas för teen.', verr_unrated: 'Spel med handicap kräver CR och Slope för alla spelares tees.'
+});
+Object.assign(window.I18N.en, {
+  allSweden: 'All courses in Sweden', dirIntro: 'Download the register of Sweden’s golf courses from OpenStreetMap. It is stored on the phone, so you can search without coverage. Choose a course to get its holes, greens and hazards.',
+  dirLoad: 'Download the course register', dirLoading: 'Downloading all courses…', dirRefresh: 'Update the register', dirCount: '{n} courses', dirSearchPh: 'Search course or town',
+  sortNear: 'Nearest first', nearestFirst: 'Nearest first ✓', holesShort: 'holes', added: 'Added', dirMore: 'Showing the first 60 – type more to find others.',
+  dirUnnamed: '{n} courses without a name in the map data are not shown.', dirOther: 'Can’t find the course? Search OpenStreetMap',
+  dirRatingNote: 'Course Rating and Slope are not in open data – they are on the course scorecard, the club website or in the Swedish Golf Federation’s app. Without them you can still play with GPS and gross scores.',
+  noRatingTag: 'No CR/Slope', defaultTee: 'Tee', unratedCheck: 'No CR/Slope – play gross for now',
+  unratedHelp: 'Rounds are then counted without handicap strokes or score differential. Enter CR and Slope when you have them and future rounds use handicap.',
+  unratedRound: 'This tee has no Course Rating or Slope. The round is gross – no handicap strokes, net scores or score differential.',
+  unratedBar: 'Gross round – no CR/Slope for this tee.', verr_unrated: 'Handicap games need CR and Slope for every player’s tee.'
+});
 </script>
 <script>/* Banboken – etapp 1. Offline-först: all data sparas lokalt efter varje ändring. */
 (function () {
@@ -2557,6 +2644,7 @@ Object.assign(window.I18N.en, {
   }
   function teeFromGeo(geo) {
     var te = blankTee(), hs = [];
+    te.unrated = true; te.name = t('defaultTee');
     for (var i = 1; i <= 18; i++) hs.push(geo.holes[String(i)]);
     if (hs.every(function (h) { return h && h.par >= 3 && h.par <= 6; })) hs.forEach(function (h, i) { te.holes[i].par = h.par; });
     var sis = hs.map(function (h) { return h && h.si; });
@@ -2576,7 +2664,7 @@ Object.assign(window.I18N.en, {
         if (ex) { view.draft = JSON.parse(JSON.stringify(ex)); view.draft.geo = geo; }
         else view.draft = { isNew: true, id: uid(), name: res.name, club: '', lat: +res.lat.toFixed(5), lon: +res.lon.toFixed(5), verified: false, geo: geo, tees: [teeFromGeo(geo)] };
       }
-      view.sub = 'edit'; view.errors = []; view.flash = t('geoLinked'); view.find = { status: 'idle', results: [] }; window.scrollTo(0, 0); render();
+      view.sub = 'edit'; view.dirLink = false; view.errors = []; view.flash = t('geoLinked'); view.find = { status: 'idle', results: [] }; window.scrollTo(0, 0); render();
     }).catch(findError);
   }
   function boundsOfGeo(geo) {
@@ -2677,6 +2765,7 @@ Object.assign(window.I18N.en, {
     var ctx = { players: players, teams: teams, teamMode: s.teamMode };
     var games = setupGames(teams);
     games.forEach(function (g) { var e = GM.validate(g, ctx); if (e) errs.push({ type: g.type, code: e }); });
+    if (games.length && players.some(function (p) { return !C.teeRated(p.tee); })) errs.push({ type: null, code: 'unrated' });
     if (s.mode === 'team') {
       if (!games.length) errs.push({ type: null, code: 'needGame' });
       if (players.some(function (p) { return !(s.teamOf || {})[p.id]; })) errs.push({ type: null, code: 'allInTeam' });
@@ -3463,6 +3552,59 @@ Object.assign(window.I18N.en, {
     if (!wantViewer && live.viewerTimer) { clearInterval(live.viewerTimer); live.viewerTimer = null; }
   }
 
+  // ======================= ALLA BANOR I SVERIGE (banregister från OpenStreetMap) =======================
+  var DIR_KEY = 'banboken:dir-se';
+  function loadDir() { try { var d = JSON.parse(localStorage.getItem(DIR_KEY) || 'null'); return d && Array.isArray(d.items) ? d : null; } catch (e) { return null; } }
+  var dir = loadDir(), dirState = { status: 'idle', msg: null, pos: null };
+  function fetchDirectory() {
+    dirState.status = 'loading'; dirState.msg = null; render();
+    var q = '[out:json][timeout:120];area["ISO3166-1"="SE"][admin_level=2]->.se;(way[leisure=golf_course](area.se);relation[leisure=golf_course](area.se););out tags bb;';
+    overpass(q).then(function (j) {
+      var d = G.parseDirectory(j);
+      if (!d.items.length) throw new Error('empty');
+      dir = { fetchedAt: new Date().toISOString(), items: d.items, unnamed: d.unnamed };
+      try { localStorage.setItem(DIR_KEY, JSON.stringify(dir)); } catch (e) {}
+      dirState.status = 'done'; render();
+    }).catch(function () {
+      dirState.status = 'error';
+      dirState.msg = t('netError') + (/github\.io$|^localhost$/.test(location.hostname) ? '' : ' ' + t('previewNote'));
+      render();
+    });
+  }
+  function addedRefs() { var m = {}; state.courses.forEach(function (c) { if (c.geo && c.geo.osmRef) m[c.geo.osmRef] = c.id; }); return m; }
+  function dirListHtml() {
+    if (!dir) return '';
+    var res = G.searchDirectory(dir.items, view.dirQ || '', dirState.pos, 60), added = addedRefs();
+    if (!res.length) return '<p class="muted">' + esc(t('noResults')) + '</p>';
+    return res.map(function (x) {
+      var it = x.it, ref = it.t + '/' + it.id;
+      var sub = [it.c, x.d !== null ? dec(x.d / 1000) + ' km' : '', it.h ? it.h + ' ' + t('holesShort') : ''].filter(Boolean).join(' · ');
+      return '<button class="row" data-act="dir-pick:' + it.t + ':' + it.id + '"><span class="row-main"><strong>' + esc(it.n) + '</strong>' + (added[ref] ? ' <em class="tag ok">' + esc(t('added')) + '</em>' : '') +
+        '<small>' + esc(sub) + '</small></span><span class="chev">›</span></button>';
+    }).join('') + (res.length === 60 ? '<p class="note">' + esc(t('dirMore')) + '</p>' : '');
+  }
+  function viewDirectory() {
+    var h = header(t('allSweden'), 'back-dir') + '<main class="page">';
+    if (view.find && view.find.status === 'loading') h += '<p class="muted loading">' + esc(view.find.msg || t('geoLoading')) + '</p>';
+    if (view.find && view.find.status === 'error') h += '<p class="warn">' + esc(view.find.msg) + '</p>';
+    if (!dir) {
+      h += '<p>' + esc(t('dirIntro')) + '</p>';
+      h += '<button class="btn gold big" data-act="dir-load"' + (dirState.status === 'loading' ? ' disabled' : '') + '>' + esc(dirState.status === 'loading' ? t('dirLoading') : t('dirLoad')) + '</button>';
+      if (dirState.status === 'error') h += '<p class="warn">' + esc(dirState.msg) + '</p>';
+      return h + '<p class="note">' + esc(t('osmNote')) + '</p><button class="link" data-act="find">' + esc(t('dirOther')) + '</button></main>';
+    }
+    h += '<p class="meta">' + esc(fmt(t('dirCount'), { n: dir.items.length })) + ' · ' + esc(t('updated')) + ' ' + esc(fmtDate(dir.fetchedAt)) + '</p>';
+    h += '<div class="searchrow"><input data-field="dir.q" value="' + esc(view.dirQ || '') + '" placeholder="' + esc(t('dirSearchPh')) + '" autocorrect="off" enterkeyhint="search"></div>';
+    h += '<div class="chips"><button class="chip' + (dirState.pos ? ' on' : '') + '" data-act="dir-near">' + esc(dirState.pos ? t('nearestFirst') : t('sortNear')) + '</button>' +
+      '<button class="chip" data-act="dir-load"' + (dirState.status === 'loading' ? ' disabled' : '') + '>' + esc(dirState.status === 'loading' ? t('dirLoading') : t('dirRefresh')) + '</button></div>';
+    if (dirState.status === 'error') h += '<p class="warn">' + esc(dirState.msg) + '</p>';
+    h += '<section class="block" id="dir-list">' + dirListHtml() + '</section>';
+    h += '<p class="note">' + esc(t('dirRatingNote')) + '</p>';
+    h += '<p class="note">' + esc(t('osmNote')) + (dir.unnamed ? ' ' + esc(fmt(t('dirUnnamed'), { n: dir.unnamed })) : '') + '</p>';
+    h += '<button class="link" data-act="find">' + esc(t('dirOther')) + '</button>';
+    return h + '</main>';
+  }
+
   var state = load();
   var storageOk = true;
   function saveLocalOnly() {
@@ -3654,18 +3796,19 @@ Object.assign(window.I18N.en, {
       if (c.demo) h += '<p class="warn">' + esc(t('demoWarning')) + '</p>';
       h += '<section class="block"><h3>' + esc(t('chooseTee')) + '</h3><div class="choices">';
       c.tees.forEach(function (te) {
-        h += '<button class="choice' + (s.teeId === te.id ? ' on' : '') + '" data-act="pick-tee:' + te.id + '"><strong>' + esc(te.name) + '</strong><small>CR ' + dec(te.cr) + ' · Slope ' + te.slope + ' · Par ' + C.sumPar(te.holes) + '</small></button>';
+        h += '<button class="choice' + (s.teeId === te.id ? ' on' : '') + '" data-act="pick-tee:' + te.id + '"><strong>' + esc(te.name) + '</strong><small>' + (C.teeRated(te) ? 'CR ' + dec(te.cr) + ' · Slope ' + te.slope : esc(t('noRatingTag'))) + ' · Par ' + C.sumPar(te.holes) + '</small></button>';
       });
       h += '</div></section>';
       var te = s.teeId && c.tees.filter(function (x) { return x.id === s.teeId; })[0];
       if (te) {
         var allowance = s.allowance || state.profile.allowance;
         var par = C.sumPar(te.holes), hi = state.profile.hi;
-        var exact = C.courseHandicapExact(hi, te.slope, te.cr, par), ch = C.courseHandicap(hi, te.slope, te.cr, par), ph = C.playingHandicap(ch, allowance);
+        var rated = C.teeRated(te), exact = rated ? C.courseHandicapExact(hi, te.slope, te.cr, par) : 0, ch = rated ? C.courseHandicap(hi, te.slope, te.cr, par) : 0, ph = C.playingHandicap(ch, allowance);
         h += '<section class="block"><h3>' + esc(t('format')) + '</h3><div class="seg">' +
           seg('format', 'stroke', t('strokePlay'), s.format || 'stableford') + seg('format', 'stableford', t('stableford'), s.format || 'stableford') + '</div>' +
           '<h3>' + esc(t('allowance')) + '</h3><div class="seg">' + [100, 95, 90, 85].map(function (a) { return seg('allowance', a, a + ' %', allowance); }).join('') + '</div>' +
           '<p class="note">' + esc(t('allowanceHelp')) + '</p></section>';
+        if (!C.teeRated(te)) h += '<p class="warn">' + esc(t('unratedRound')) + '</p>'; else
         h += '<section class="block hcpcalc"><div class="big-pair"><div><span>' + ph + '</span><small>' + esc(t('playingHcp')) + '</small></div><div><span>' + ch + '</span><small>' + esc(t('courseHcp')) + '</small></div></div>' +
           '<p class="formula">' + esc(C.formatHandicap(hi)) + ' × ' + te.slope + '/113 + (' + dec(te.cr) + ' − ' + par + ') = ' + dec(exact, 2) + ' → ' + ch +
           (allowance !== 100 ? '<br>' + ch + ' × ' + allowance + ' % = ' + dec(ch * allowance / 100, 2) + ' → ' + ph : '') + '</p></section>';
@@ -3700,6 +3843,7 @@ Object.assign(window.I18N.en, {
       '<div><b>' + s.points + '</b><small>' + esc(t('points')) + '</small></div><div><b>' + s.playingHandicap + '</b><small>' + esc(t('playingHcp')) + '</small></div></div>';
     if (grp) h += '<div class="modetabs">' + [['hole', 'toHole'], ['card', 'toScorecard'], ['board', 'competition']].map(function (x) { return '<button class="' + (view.holeMode === x[0] ? 'on' : '') + '" data-act="mode:' + x[0] + '">' + esc(t(x[1])) + '</button>'; }).join('') + '</div>';
     if (r.demo) h += '<p class="warn tight">' + esc(t('demoWarning')) + '</p>';
+    if (!C.teeRated(r.tee)) h += '<p class="warn tight">' + esc(t('unratedBar')) + '</p>';
     var body = view.holeMode === 'hole' ? holeView(r, s)
       : view.holeMode === 'board' ? liveControls(r) + board(r, true)
       : (r.mode === 'team' ? groupCard(r) + '<button class="btn gold big" data-act="finish">' + esc(t('finishRound')) + '</button>' : grp ? scorecard(r, s, false) + groupCard(r) + '<button class="btn gold big" data-act="finish">' + esc(t('finishRound')) + '</button>' : scorecard(r, s, true));
@@ -3836,11 +3980,12 @@ Object.assign(window.I18N.en, {
   // --- Banor ---
   function viewCourses() {
     if (view.sub === 'find') return viewFind();
-    var h = header(t('courses')) + '<main class="page"><button class="btn gold big" data-act="find">' + esc(t('findCourses')) + '</button>' +
+    if (view.sub === 'dir') return viewDirectory();
+    var h = header(t('courses')) + '<main class="page"><button class="btn gold big" data-act="dir">' + esc(t('allSweden')) + (dir ? ' (' + dir.items.length + ')' : '') + '</button>' +
       '<button class="btn ghost wide" data-act="new-course">' + esc(t('addManual')) + '</button><section class="block">';
     state.courses.forEach(function (c) {
       h += '<button class="row" data-act="edit-course:' + c.id + '"><span class="row-main"><strong>' + esc(c.name) + '</strong> ' + badge(c) +
-        (c.geo ? ' <em class="tag ok">GPS ' + G.coverage(c.geo).holes + '/18</em>' : '') + '<small>' + esc(c.club || '') + ' · ' + c.tees.length + ' tee' + (c.tees.length === 1 ? '' : 's') + '</small></span><span class="chev">›</span></button>';
+        (c.geo ? ' <em class="tag ok">GPS ' + G.coverage(c.geo).holes + '/18</em>' : '') + (c.tees.some(function (x) { return !C.teeRated(x); }) ? ' <em class="tag">' + esc(t('noRatingTag')) + '</em>' : '') + '<small>' + esc(c.club || '') + ' · ' + c.tees.length + ' tee' + (c.tees.length === 1 ? '' : 's') + '</small></span><span class="chev">›</span></button>';
     });
     return h + '</section></main>';
   }
@@ -3862,6 +4007,7 @@ Object.assign(window.I18N.en, {
       h += '<fieldset class="tee"><legend>' + esc(te.name || t('tee') + ' ' + (ti + 1)) + '</legend>' +
         field(t('teeName'), 't' + ti + '.name', te.name) +
         '<div class="two">' + field(t('cr'), 't' + ti + '.cr', te.cr, 'decimal') + field(t('slope'), 't' + ti + '.slope', te.slope, 'numeric') + '</div>';
+      h += '<label class="check"><input type="checkbox" data-field="t' + ti + '.unrated"' + (te.unrated ? ' checked' : '') + '> <span>' + esc(t('unratedCheck')) + '<small class="note block-note">' + esc(t('unratedHelp')) + '</small></span></label>';
       if (ti > 0) h += '<button class="link" data-act="copy-tee:' + ti + '">' + esc(t('copyFrom')) + ' ' + esc(c.tees[0].name || t('tee') + ' 1') + '</button>';
       h += '<div class="sc-wrap"><table class="holes-edit"><thead><tr><th>' + esc(t('hole')) + '</th><th>' + esc(t('par')) + '</th><th>' + esc(t('si')) + '</th><th>' + esc(t('length')) + ' (m)</th></tr></thead><tbody>';
       te.holes.forEach(function (ho, hi) {
@@ -4028,7 +4174,17 @@ Object.assign(window.I18N.en, {
       case 'zoom': view.mapZoom = v; refreshGps(); return;
       case 'sim': gps.sim = !gps.sim; if (gps.sim) { gpsStop(); gps.pos = null; } else { gps.pos = null; gps.status = 'off'; } gps.suggest = null; render(); return;
       case 'find': view.sub = 'find'; view.find = { status: 'idle', results: [], link: false }; window.scrollTo(0, 0); break;
-      case 'link-geo': view.sub = 'find'; view.find = { status: 'idle', results: [], link: true, q: view.draft.name || '' }; window.scrollTo(0, 0); break;
+      case 'link-geo': view.sub = 'dir'; view.dirLink = true; view.dirQ = view.draft.name || ''; view.find = { status: 'idle', results: [], link: true }; window.scrollTo(0, 0); break;
+      case 'dir': view.sub = 'dir'; view.dirLink = false; view.find = { status: 'idle', results: [], link: false }; window.scrollTo(0, 0); break;
+      case 'back-dir': view.sub = view.dirLink ? 'edit' : null; view.dirLink = false; break;
+      case 'dir-load': fetchDirectory(); return;
+      case 'dir-near': getPos(function (lat, lon) { dirState.pos = [lat, lon]; render(); }); return;
+      case 'dir-pick': {
+        var dp = v.split(':'), it = dir && dir.items.filter(function (x) { return x.t === dp[0] && String(x.id) === dp[1]; })[0];
+        if (!it) return;
+        view.find = { status: 'loading', msg: t('geoLoading'), results: [{ name: it.n, osmType: it.t, osmId: it.id, lat: it.lat, lon: it.lon, bounds: it.b }], link: !!view.dirLink };
+        window.scrollTo(0, 0); pickOsm(0); return;
+      }
       case 'back-find': view.sub = view.find.link ? 'edit' : null; break;
       case 'find-near': findNearby(); return;
       case 'find-search': searchCourses(view.find.q); return;
@@ -4247,6 +4403,7 @@ Object.assign(window.I18N.en, {
     if (key.indexOf('add.') === 0) { view.setup.add[key.slice(4)] = val; return; }
     if (key.indexOf('cloud.') === 0) { cloudForm[key.slice(6)] = val; return; }
     if (key === 'live.code') { view.liveCode = val; return; }
+    if (key === 'dir.q') { if (view.dirQ === val) return; view.dirQ = val; var dl = document.getElementById('dir-list'); if (dl) dl.innerHTML = dirListHtml(); return; }
     if (key === 'sd.dist') { var ar = activeRound(); if (ar) shotDraft(ar).dist = val; return; }
     if (key.indexOf('bag.') === 0) {
       var bp = key.split('.'), bc = state.bag.filter(function (c) { return c.id === bp[1]; })[0];
@@ -4293,6 +4450,7 @@ Object.assign(window.I18N.en, {
         var hv = String(val).trim() === '' ? null : parseInt(val, 10);
         te.holes[+m[2]][m[3]] = isFinite(hv) ? hv : null;
       } else if (m[3] === 'name') te.name = val;
+      else if (m[3] === 'unrated') te.unrated = !!val;
       else te[m[3]] = String(val).trim() === '' ? null : num(val);
     }
   }
@@ -4308,7 +4466,7 @@ Object.assign(window.I18N.en, {
     document.addEventListener('change', function (e) { if (e.target.hasAttribute('data-field')) onField(e.target); });
     document.addEventListener('input', function (e) {
       var k = e.target.getAttribute('data-field');
-      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code')) onField(e.target);
+      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code' || k === 'dir.q')) onField(e.target);
     });
     window.addEventListener('pagehide', save);
     document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.getAttribute && e.target.getAttribute('data-field') === 'find.q') { view.find.q = e.target.value; searchCourses(view.find.q); } });

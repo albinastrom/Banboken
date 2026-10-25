@@ -385,3 +385,27 @@ Object.assign(window.I18N.en, {
   badLiveCode: 'The code has 8 characters (A–Z and 2–9).', liveNotFound: 'The match does not exist or has expired (2 days).', liveLoading: 'Loading the match…', liveDone: 'finished',
   livePlayAs: 'I am playing as', liveSaving: 'Saving…', liveUnsent: 'Not sent yet – retrying.', liveSaved: 'Saved. The standings update automatically.', liveSendFailed: 'Could not send'
 });
+
+/* Alla banor i Sverige */
+Object.assign(window.I18N.sv, {
+  allSweden: 'Alla banor i Sverige', dirIntro: 'Hämta registret över Sveriges golfbanor från OpenStreetMap. Det sparas i telefonen, så du kan söka även utan täckning. Välj en bana så hämtas hål, greener och hinder.',
+  dirLoad: 'Hämta banregistret', dirLoading: 'Hämtar alla banor…', dirRefresh: 'Uppdatera registret', dirCount: '{n} banor', dirSearchPh: 'Sök bana eller ort',
+  sortNear: 'Närmast först', nearestFirst: 'Närmast först ✓', holesShort: 'hål', added: 'Tillagd', dirMore: 'Visar de 60 första – skriv mer i sökrutan för att hitta fler.',
+  dirUnnamed: '{n} banor utan namn i kartdata visas inte.', dirOther: 'Hittar du inte banan? Sök i OpenStreetMap',
+  dirRatingNote: 'Course Rating och Slope finns inte i öppna data – de står på banans scorekort, klubbens hemsida eller i Min Golf. Utan dem kan du ändå spela med GPS och bruttoscore.',
+  noRatingTag: 'CR/Slope saknas', defaultTee: 'Tee', unratedCheck: 'CR/Slope saknas – spela brutto tills vidare',
+  unratedHelp: 'Ronder räknas då utan handicapslag och utan score differential. Fyll i CR och Slope när du har dem, så räknas framtida ronder med handicap.',
+  unratedRound: 'Den här teen saknar Course Rating och Slope. Ronden räknas brutto – utan handicapslag, nettoresultat eller score differential.',
+  unratedBar: 'Bruttorond – CR/Slope saknas för teen.', verr_unrated: 'Spel med handicap kräver CR och Slope för alla spelares tees.'
+});
+Object.assign(window.I18N.en, {
+  allSweden: 'All courses in Sweden', dirIntro: 'Download the register of Sweden’s golf courses from OpenStreetMap. It is stored on the phone, so you can search without coverage. Choose a course to get its holes, greens and hazards.',
+  dirLoad: 'Download the course register', dirLoading: 'Downloading all courses…', dirRefresh: 'Update the register', dirCount: '{n} courses', dirSearchPh: 'Search course or town',
+  sortNear: 'Nearest first', nearestFirst: 'Nearest first ✓', holesShort: 'holes', added: 'Added', dirMore: 'Showing the first 60 – type more to find others.',
+  dirUnnamed: '{n} courses without a name in the map data are not shown.', dirOther: 'Can’t find the course? Search OpenStreetMap',
+  dirRatingNote: 'Course Rating and Slope are not in open data – they are on the course scorecard, the club website or in the Swedish Golf Federation’s app. Without them you can still play with GPS and gross scores.',
+  noRatingTag: 'No CR/Slope', defaultTee: 'Tee', unratedCheck: 'No CR/Slope – play gross for now',
+  unratedHelp: 'Rounds are then counted without handicap strokes or score differential. Enter CR and Slope when you have them and future rounds use handicap.',
+  unratedRound: 'This tee has no Course Rating or Slope. The round is gross – no handicap strokes, net scores or score differential.',
+  unratedBar: 'Gross round – no CR/Slope for this tee.', verr_unrated: 'Handicap games need CR and Slope for every player’s tee.'
+});

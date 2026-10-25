@@ -83,6 +83,13 @@
     eq('Rond: justerat brutto', s.adjustedGross, 8 + (pars.slice(1, 17).reduce(function (a, b) { return a + b; }, 0) + 16) + 8);
     eq('Tee-validering godkänner korrekt tee', Core.validateTee(tee), []);
 
+    // Banor utan Course Rating/Slope: bara brutto
+    var ut = { name: 'Gul', cr: null, slope: null, unrated: true, holes: tee.holes };
+    eq('Tee utan CR/Slope godkänns när det är markerat', Core.validateTee(ut), []);
+    eq('Tee utan CR/Slope underkänns om det inte är markerat', Core.validateTee({ name: 'Gul', cr: null, slope: null, holes: tee.holes }).length, 2);
+    var us = Core.summarizeRound(round, ut);
+    eq('Rond utan CR/Slope: inga hcp-slag, ingen differential', [us.playingHandicap, us.differential, us.unrated, us.gross], [0, null, true, s.gross]);
+
 
     if (Geo) {
       var O = [57.0, 14.0], P = Geo.proj(O);
@@ -132,6 +139,17 @@
       eq('Närmaste hål', Geo.nearestHole(L(98, 400), geo.holes).ref, '2');
       var spec = []; for (var q = 0; q < 18; q++) spec.push({ par: 4, si: q + 1, length: 350 });
       var demo = Geo.demoGeometry([57.1, 14.1], spec);
+var dj = { elements: [
+        { type: 'way', id: 1, tags: { leisure: 'golf_course', name: 'Ullna Golf & Country Club', 'addr:city': 'Åkersberga' }, bounds: { minlat: 59.48, minlon: 18.15, maxlat: 59.50, maxlon: 18.18 } },
+        { type: 'relation', id: 2, tags: { leisure: 'golf_course', name: 'Ullna Golf & Country Club' }, bounds: { minlat: 59.481, minlon: 18.151, maxlat: 59.501, maxlon: 18.181 } },
+        { type: 'way', id: 3, tags: { leisure: 'golf_course', name: 'Österåkers GK' }, bounds: { minlat: 59.46, minlon: 18.30, maxlat: 59.47, maxlon: 18.32 } },
+        { type: 'way', id: 4, tags: { leisure: 'golf_course' }, bounds: { minlat: 59.0, minlon: 18.0, maxlat: 59.01, maxlon: 18.01 } },
+        { type: 'way', id: 5, tags: { leisure: 'golf_course', golf: 'driving_range', name: 'Range' }, bounds: { minlat: 59.0, minlon: 18.0, maxlat: 59.01, maxlon: 18.01 } }
+      ] };
+      var dir = Geo.parseDirectory(dj);
+      eq('Banregister: dubbletter slås ihop, range och namnlösa tas bort', [dir.items.length, dir.unnamed, dir.items[0].t], [2, 1, 'relation']);
+      eq('Banregister: sök utan å/ä/ö-krav', Geo.searchDirectory(dir.items, 'osteraker').map(function (x) { return x.it.n; }), ['Österåkers GK']);
+      eq('Banregister: sortering efter avstånd', Geo.searchDirectory(dir.items, '', [59.465, 18.31])[0].it.n, 'Österåkers GK');
       eq('Demo-geometri: 18 hål med green', Geo.coverage(demo).greens, 18);
     }
 

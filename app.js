@@ -320,6 +320,7 @@
   }
   function teeFromGeo(geo) {
     var te = blankTee(), hs = [];
+    te.unrated = true; te.name = t('defaultTee');
     for (var i = 1; i <= 18; i++) hs.push(geo.holes[String(i)]);
     if (hs.every(function (h) { return h && h.par >= 3 && h.par <= 6; })) hs.forEach(function (h, i) { te.holes[i].par = h.par; });
     var sis = hs.map(function (h) { return h && h.si; });
@@ -339,7 +340,7 @@
         if (ex) { view.draft = JSON.parse(JSON.stringify(ex)); view.draft.geo = geo; }
         else view.draft = { isNew: true, id: uid(), name: res.name, club: '', lat: +res.lat.toFixed(5), lon: +res.lon.toFixed(5), verified: false, geo: geo, tees: [teeFromGeo(geo)] };
       }
-      view.sub = 'edit'; view.errors = []; view.flash = t('geoLinked'); view.find = { status: 'idle', results: [] }; window.scrollTo(0, 0); render();
+      view.sub = 'edit'; view.dirLink = false; view.errors = []; view.flash = t('geoLinked'); view.find = { status: 'idle', results: [] }; window.scrollTo(0, 0); render();
     }).catch(findError);
   }
   function boundsOfGeo(geo) {
@@ -440,6 +441,7 @@
     var ctx = { players: players, teams: teams, teamMode: s.teamMode };
     var games = setupGames(teams);
     games.forEach(function (g) { var e = GM.validate(g, ctx); if (e) errs.push({ type: g.type, code: e }); });
+    if (games.length && players.some(function (p) { return !C.teeRated(p.tee); })) errs.push({ type: null, code: 'unrated' });
     if (s.mode === 'team') {
       if (!games.length) errs.push({ type: null, code: 'needGame' });
       if (players.some(function (p) { return !(s.teamOf || {})[p.id]; })) errs.push({ type: null, code: 'allInTeam' });
@@ -1226,6 +1228,59 @@
     if (!wantViewer && live.viewerTimer) { clearInterval(live.viewerTimer); live.viewerTimer = null; }
   }
 
+  // ======================= ALLA BANOR I SVERIGE (banregister från OpenStreetMap) =======================
+  var DIR_KEY = 'banboken:dir-se';
+  function loadDir() { try { var d = JSON.parse(localStorage.getItem(DIR_KEY) || 'null'); return d && Array.isArray(d.items) ? d : null; } catch (e) { return null; } }
+  var dir = loadDir(), dirState = { status: 'idle', msg: null, pos: null };
+  function fetchDirectory() {
+    dirState.status = 'loading'; dirState.msg = null; render();
+    var q = '[out:json][timeout:120];area["ISO3166-1"="SE"][admin_level=2]->.se;(way[leisure=golf_course](area.se);relation[leisure=golf_course](area.se););out tags bb;';
+    overpass(q).then(function (j) {
+      var d = G.parseDirectory(j);
+      if (!d.items.length) throw new Error('empty');
+      dir = { fetchedAt: new Date().toISOString(), items: d.items, unnamed: d.unnamed };
+      try { localStorage.setItem(DIR_KEY, JSON.stringify(dir)); } catch (e) {}
+      dirState.status = 'done'; render();
+    }).catch(function () {
+      dirState.status = 'error';
+      dirState.msg = t('netError') + (/github\.io$|^localhost$/.test(location.hostname) ? '' : ' ' + t('previewNote'));
+      render();
+    });
+  }
+  function addedRefs() { var m = {}; state.courses.forEach(function (c) { if (c.geo && c.geo.osmRef) m[c.geo.osmRef] = c.id; }); return m; }
+  function dirListHtml() {
+    if (!dir) return '';
+    var res = G.searchDirectory(dir.items, view.dirQ || '', dirState.pos, 60), added = addedRefs();
+    if (!res.length) return '<p class="muted">' + esc(t('noResults')) + '</p>';
+    return res.map(function (x) {
+      var it = x.it, ref = it.t + '/' + it.id;
+      var sub = [it.c, x.d !== null ? dec(x.d / 1000) + ' km' : '', it.h ? it.h + ' ' + t('holesShort') : ''].filter(Boolean).join(' · ');
+      return '<button class="row" data-act="dir-pick:' + it.t + ':' + it.id + '"><span class="row-main"><strong>' + esc(it.n) + '</strong>' + (added[ref] ? ' <em class="tag ok">' + esc(t('added')) + '</em>' : '') +
+        '<small>' + esc(sub) + '</small></span><span class="chev">›</span></button>';
+    }).join('') + (res.length === 60 ? '<p class="note">' + esc(t('dirMore')) + '</p>' : '');
+  }
+  function viewDirectory() {
+    var h = header(t('allSweden'), 'back-dir') + '<main class="page">';
+    if (view.find && view.find.status === 'loading') h += '<p class="muted loading">' + esc(view.find.msg || t('geoLoading')) + '</p>';
+    if (view.find && view.find.status === 'error') h += '<p class="warn">' + esc(view.find.msg) + '</p>';
+    if (!dir) {
+      h += '<p>' + esc(t('dirIntro')) + '</p>';
+      h += '<button class="btn gold big" data-act="dir-load"' + (dirState.status === 'loading' ? ' disabled' : '') + '>' + esc(dirState.status === 'loading' ? t('dirLoading') : t('dirLoad')) + '</button>';
+      if (dirState.status === 'error') h += '<p class="warn">' + esc(dirState.msg) + '</p>';
+      return h + '<p class="note">' + esc(t('osmNote')) + '</p><button class="link" data-act="find">' + esc(t('dirOther')) + '</button></main>';
+    }
+    h += '<p class="meta">' + esc(fmt(t('dirCount'), { n: dir.items.length })) + ' · ' + esc(t('updated')) + ' ' + esc(fmtDate(dir.fetchedAt)) + '</p>';
+    h += '<div class="searchrow"><input data-field="dir.q" value="' + esc(view.dirQ || '') + '" placeholder="' + esc(t('dirSearchPh')) + '" autocorrect="off" enterkeyhint="search"></div>';
+    h += '<div class="chips"><button class="chip' + (dirState.pos ? ' on' : '') + '" data-act="dir-near">' + esc(dirState.pos ? t('nearestFirst') : t('sortNear')) + '</button>' +
+      '<button class="chip" data-act="dir-load"' + (dirState.status === 'loading' ? ' disabled' : '') + '>' + esc(dirState.status === 'loading' ? t('dirLoading') : t('dirRefresh')) + '</button></div>';
+    if (dirState.status === 'error') h += '<p class="warn">' + esc(dirState.msg) + '</p>';
+    h += '<section class="block" id="dir-list">' + dirListHtml() + '</section>';
+    h += '<p class="note">' + esc(t('dirRatingNote')) + '</p>';
+    h += '<p class="note">' + esc(t('osmNote')) + (dir.unnamed ? ' ' + esc(fmt(t('dirUnnamed'), { n: dir.unnamed })) : '') + '</p>';
+    h += '<button class="link" data-act="find">' + esc(t('dirOther')) + '</button>';
+    return h + '</main>';
+  }
+
   var state = load();
   var storageOk = true;
   function saveLocalOnly() {
@@ -1417,18 +1472,19 @@
       if (c.demo) h += '<p class="warn">' + esc(t('demoWarning')) + '</p>';
       h += '<section class="block"><h3>' + esc(t('chooseTee')) + '</h3><div class="choices">';
       c.tees.forEach(function (te) {
-        h += '<button class="choice' + (s.teeId === te.id ? ' on' : '') + '" data-act="pick-tee:' + te.id + '"><strong>' + esc(te.name) + '</strong><small>CR ' + dec(te.cr) + ' · Slope ' + te.slope + ' · Par ' + C.sumPar(te.holes) + '</small></button>';
+        h += '<button class="choice' + (s.teeId === te.id ? ' on' : '') + '" data-act="pick-tee:' + te.id + '"><strong>' + esc(te.name) + '</strong><small>' + (C.teeRated(te) ? 'CR ' + dec(te.cr) + ' · Slope ' + te.slope : esc(t('noRatingTag'))) + ' · Par ' + C.sumPar(te.holes) + '</small></button>';
       });
       h += '</div></section>';
       var te = s.teeId && c.tees.filter(function (x) { return x.id === s.teeId; })[0];
       if (te) {
         var allowance = s.allowance || state.profile.allowance;
         var par = C.sumPar(te.holes), hi = state.profile.hi;
-        var exact = C.courseHandicapExact(hi, te.slope, te.cr, par), ch = C.courseHandicap(hi, te.slope, te.cr, par), ph = C.playingHandicap(ch, allowance);
+        var rated = C.teeRated(te), exact = rated ? C.courseHandicapExact(hi, te.slope, te.cr, par) : 0, ch = rated ? C.courseHandicap(hi, te.slope, te.cr, par) : 0, ph = C.playingHandicap(ch, allowance);
         h += '<section class="block"><h3>' + esc(t('format')) + '</h3><div class="seg">' +
           seg('format', 'stroke', t('strokePlay'), s.format || 'stableford') + seg('format', 'stableford', t('stableford'), s.format || 'stableford') + '</div>' +
           '<h3>' + esc(t('allowance')) + '</h3><div class="seg">' + [100, 95, 90, 85].map(function (a) { return seg('allowance', a, a + ' %', allowance); }).join('') + '</div>' +
           '<p class="note">' + esc(t('allowanceHelp')) + '</p></section>';
+        if (!C.teeRated(te)) h += '<p class="warn">' + esc(t('unratedRound')) + '</p>'; else
         h += '<section class="block hcpcalc"><div class="big-pair"><div><span>' + ph + '</span><small>' + esc(t('playingHcp')) + '</small></div><div><span>' + ch + '</span><small>' + esc(t('courseHcp')) + '</small></div></div>' +
           '<p class="formula">' + esc(C.formatHandicap(hi)) + ' × ' + te.slope + '/113 + (' + dec(te.cr) + ' − ' + par + ') = ' + dec(exact, 2) + ' → ' + ch +
           (allowance !== 100 ? '<br>' + ch + ' × ' + allowance + ' % = ' + dec(ch * allowance / 100, 2) + ' → ' + ph : '') + '</p></section>';
@@ -1463,6 +1519,7 @@
       '<div><b>' + s.points + '</b><small>' + esc(t('points')) + '</small></div><div><b>' + s.playingHandicap + '</b><small>' + esc(t('playingHcp')) + '</small></div></div>';
     if (grp) h += '<div class="modetabs">' + [['hole', 'toHole'], ['card', 'toScorecard'], ['board', 'competition']].map(function (x) { return '<button class="' + (view.holeMode === x[0] ? 'on' : '') + '" data-act="mode:' + x[0] + '">' + esc(t(x[1])) + '</button>'; }).join('') + '</div>';
     if (r.demo) h += '<p class="warn tight">' + esc(t('demoWarning')) + '</p>';
+    if (!C.teeRated(r.tee)) h += '<p class="warn tight">' + esc(t('unratedBar')) + '</p>';
     var body = view.holeMode === 'hole' ? holeView(r, s)
       : view.holeMode === 'board' ? liveControls(r) + board(r, true)
       : (r.mode === 'team' ? groupCard(r) + '<button class="btn gold big" data-act="finish">' + esc(t('finishRound')) + '</button>' : grp ? scorecard(r, s, false) + groupCard(r) + '<button class="btn gold big" data-act="finish">' + esc(t('finishRound')) + '</button>' : scorecard(r, s, true));
@@ -1599,11 +1656,12 @@
   // --- Banor ---
   function viewCourses() {
     if (view.sub === 'find') return viewFind();
-    var h = header(t('courses')) + '<main class="page"><button class="btn gold big" data-act="find">' + esc(t('findCourses')) + '</button>' +
+    if (view.sub === 'dir') return viewDirectory();
+    var h = header(t('courses')) + '<main class="page"><button class="btn gold big" data-act="dir">' + esc(t('allSweden')) + (dir ? ' (' + dir.items.length + ')' : '') + '</button>' +
       '<button class="btn ghost wide" data-act="new-course">' + esc(t('addManual')) + '</button><section class="block">';
     state.courses.forEach(function (c) {
       h += '<button class="row" data-act="edit-course:' + c.id + '"><span class="row-main"><strong>' + esc(c.name) + '</strong> ' + badge(c) +
-        (c.geo ? ' <em class="tag ok">GPS ' + G.coverage(c.geo).holes + '/18</em>' : '') + '<small>' + esc(c.club || '') + ' · ' + c.tees.length + ' tee' + (c.tees.length === 1 ? '' : 's') + '</small></span><span class="chev">›</span></button>';
+        (c.geo ? ' <em class="tag ok">GPS ' + G.coverage(c.geo).holes + '/18</em>' : '') + (c.tees.some(function (x) { return !C.teeRated(x); }) ? ' <em class="tag">' + esc(t('noRatingTag')) + '</em>' : '') + '<small>' + esc(c.club || '') + ' · ' + c.tees.length + ' tee' + (c.tees.length === 1 ? '' : 's') + '</small></span><span class="chev">›</span></button>';
     });
     return h + '</section></main>';
   }
@@ -1625,6 +1683,7 @@
       h += '<fieldset class="tee"><legend>' + esc(te.name || t('tee') + ' ' + (ti + 1)) + '</legend>' +
         field(t('teeName'), 't' + ti + '.name', te.name) +
         '<div class="two">' + field(t('cr'), 't' + ti + '.cr', te.cr, 'decimal') + field(t('slope'), 't' + ti + '.slope', te.slope, 'numeric') + '</div>';
+      h += '<label class="check"><input type="checkbox" data-field="t' + ti + '.unrated"' + (te.unrated ? ' checked' : '') + '> <span>' + esc(t('unratedCheck')) + '<small class="note block-note">' + esc(t('unratedHelp')) + '</small></span></label>';
       if (ti > 0) h += '<button class="link" data-act="copy-tee:' + ti + '">' + esc(t('copyFrom')) + ' ' + esc(c.tees[0].name || t('tee') + ' 1') + '</button>';
       h += '<div class="sc-wrap"><table class="holes-edit"><thead><tr><th>' + esc(t('hole')) + '</th><th>' + esc(t('par')) + '</th><th>' + esc(t('si')) + '</th><th>' + esc(t('length')) + ' (m)</th></tr></thead><tbody>';
       te.holes.forEach(function (ho, hi) {
@@ -1791,7 +1850,17 @@
       case 'zoom': view.mapZoom = v; refreshGps(); return;
       case 'sim': gps.sim = !gps.sim; if (gps.sim) { gpsStop(); gps.pos = null; } else { gps.pos = null; gps.status = 'off'; } gps.suggest = null; render(); return;
       case 'find': view.sub = 'find'; view.find = { status: 'idle', results: [], link: false }; window.scrollTo(0, 0); break;
-      case 'link-geo': view.sub = 'find'; view.find = { status: 'idle', results: [], link: true, q: view.draft.name || '' }; window.scrollTo(0, 0); break;
+      case 'link-geo': view.sub = 'dir'; view.dirLink = true; view.dirQ = view.draft.name || ''; view.find = { status: 'idle', results: [], link: true }; window.scrollTo(0, 0); break;
+      case 'dir': view.sub = 'dir'; view.dirLink = false; view.find = { status: 'idle', results: [], link: false }; window.scrollTo(0, 0); break;
+      case 'back-dir': view.sub = view.dirLink ? 'edit' : null; view.dirLink = false; break;
+      case 'dir-load': fetchDirectory(); return;
+      case 'dir-near': getPos(function (lat, lon) { dirState.pos = [lat, lon]; render(); }); return;
+      case 'dir-pick': {
+        var dp = v.split(':'), it = dir && dir.items.filter(function (x) { return x.t === dp[0] && String(x.id) === dp[1]; })[0];
+        if (!it) return;
+        view.find = { status: 'loading', msg: t('geoLoading'), results: [{ name: it.n, osmType: it.t, osmId: it.id, lat: it.lat, lon: it.lon, bounds: it.b }], link: !!view.dirLink };
+        window.scrollTo(0, 0); pickOsm(0); return;
+      }
       case 'back-find': view.sub = view.find.link ? 'edit' : null; break;
       case 'find-near': findNearby(); return;
       case 'find-search': searchCourses(view.find.q); return;
@@ -2010,6 +2079,7 @@
     if (key.indexOf('add.') === 0) { view.setup.add[key.slice(4)] = val; return; }
     if (key.indexOf('cloud.') === 0) { cloudForm[key.slice(6)] = val; return; }
     if (key === 'live.code') { view.liveCode = val; return; }
+    if (key === 'dir.q') { if (view.dirQ === val) return; view.dirQ = val; var dl = document.getElementById('dir-list'); if (dl) dl.innerHTML = dirListHtml(); return; }
     if (key === 'sd.dist') { var ar = activeRound(); if (ar) shotDraft(ar).dist = val; return; }
     if (key.indexOf('bag.') === 0) {
       var bp = key.split('.'), bc = state.bag.filter(function (c) { return c.id === bp[1]; })[0];
@@ -2056,6 +2126,7 @@
         var hv = String(val).trim() === '' ? null : parseInt(val, 10);
         te.holes[+m[2]][m[3]] = isFinite(hv) ? hv : null;
       } else if (m[3] === 'name') te.name = val;
+      else if (m[3] === 'unrated') te.unrated = !!val;
       else te[m[3]] = String(val).trim() === '' ? null : num(val);
     }
   }
@@ -2071,7 +2142,7 @@
     document.addEventListener('change', function (e) { if (e.target.hasAttribute('data-field')) onField(e.target); });
     document.addEventListener('input', function (e) {
       var k = e.target.getAttribute('data-field');
-      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code')) onField(e.target);
+      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code' || k === 'dir.q')) onField(e.target);
     });
     window.addEventListener('pagehide', save);
     document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.getAttribute && e.target.getAttribute('data-field') === 'find.q') { view.find.q = e.target.value; searchCourses(view.find.q); } });

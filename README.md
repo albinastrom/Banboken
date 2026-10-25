@@ -105,6 +105,11 @@ Strokes Gained mot scratch eller hcp 5/10/15/20 kräver en tabell med förvänta
 ### AI-coach med språkmodell
 Coachen i etapp 4 är regelbaserad och gratis. En språkmodell (t.ex. Claude via API) kan skriva friare analyser, men kostar per anrop och kräver API-nyckel och en liten server så att nyckeln inte ligger i appen. Den kopplas in först efter ditt godkännande – lämpligen tillsammans med Supabase i etapp 5.
 
+## Alla banor i Sverige
+**Banor → Alla banor i Sverige → Hämta banregistret.** Appen hämtar alla namngivna golfbanor i Sverige från OpenStreetMap (en gång, sparas i telefonen). Sök på namn eller ort (å/ä/ö behövs inte), eller tryck *Närmast först*. Välj en bana så hämtas hål, greener och hinder, och par och hålindex fylls i där kartdata har dem.
+
+Course Rating och Slope finns inte i öppna data (de ägs av Svenska Golfförbundet). Nya banor sparas därför som *CR/Slope saknas*: du kan spela direkt med GPS och bruttoscore. Fyll i CR och Slope från scorekortet, klubbens hemsida eller Min Golf, så räknas handicap från nästa rond. Matcher med handicap kräver CR och Slope.
+
 ## Etapp 5 – färdig produkt
 
 ### Molnsynk och konto (gratis, ca 10 minuter från iPhone)
