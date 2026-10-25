@@ -412,6 +412,7 @@ Object.assign(window.I18N.en, {
 
 /* Ny startsida och Spela golf-flöde */
 Object.assign(window.I18N.sv, {
+  geoFailed: 'Kunde inte hämta banans kartdata.', geoSlow: 'Kartservern svarar långsamt – appen provar automatiskt nästa server. Det tar högst cirka en minut.',
   timedOut: 'tidsgränsen nåddes', noConnection: 'ingen kontakt med servern', emptyResult: 'tomt svar', dirFailed: 'Kunde inte hämta alla svenska banor.', nearFailed: 'Kunde inte hämta banor i närheten.', nearLoading: 'Hämtar banor i närheten…', noneNearby: 'Inga golfbanor hittades inom 6 mil. Sök på namn i stället.',
   greetMorning: 'Upp och hoppa', greetDay: 'Hej', greetEvening: 'God kväll', friendsShort: 'Vänner', ongoing: 'Pågående rond',
   roundsTitle: 'Rundor', showAllShort: 'Visa alla', firstRoundHint: 'Tryck på Spela golf för att starta din första rond.', teamShort: 'Lag',
@@ -431,6 +432,7 @@ Object.assign(window.I18N.sv, {
   matchNeedsPlayers: 'Lägg till minst en medspelare för matchspel.', trainingNote: 'Slag för slag slås på automatiskt i ronden.'
 });
 Object.assign(window.I18N.en, {
+  geoFailed: 'Could not load the course map data.', geoSlow: 'The map server is slow – the app automatically tries the next one. It takes at most about a minute.',
   timedOut: 'timed out', noConnection: 'could not reach the server', emptyResult: 'empty response', dirFailed: 'Could not load all Swedish courses.', nearFailed: 'Could not load nearby courses.', nearLoading: 'Loading nearby courses…', noneNearby: 'No golf courses found within 60 km. Search by name instead.',
   greetMorning: 'Good morning', greetDay: 'Hi', greetEvening: 'Good evening', friendsShort: 'Friends', ongoing: 'Round in progress',
   roundsTitle: 'Rounds', showAllShort: 'Show all', firstRoundHint: 'Tap Play golf to start your first round.', teamShort: 'Team',

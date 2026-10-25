@@ -419,6 +419,10 @@ table.lb tr:first-child td{font-weight:600}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 @media (min-width:700px){#app{border-left:1px solid var(--line);border-right:1px solid var(--line);min-height:100vh}}
 
+/* Laddning */
+.busybox{display:flex;align-items:center;gap:12px;justify-content:center;min-height:62px;margin-top:16px;border-radius:12px;background:var(--surface);font-weight:600;font-size:17px}
+.spin{width:22px;height:22px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--green-2);animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 /* Ny startsida */
 .home-hero{position:relative;min-height:330px;background-size:cover;background-position:center;padding:calc(18px + env(safe-area-inset-top,0px)) 20px 70px;color:#FFFFFF;margin-top:calc(-1 * env(safe-area-inset-top,0px))}
 .home-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.05) 40%,rgba(0,0,0,.45));pointer-events:none}

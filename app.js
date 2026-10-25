@@ -318,12 +318,13 @@
   }
   function fetchCourseGeo(res) {
     var meta = { osmRef: res.osmType + '/' + res.osmId, name: res.name };
-    var aq = '[out:json][timeout:90];' + res.osmType + '(' + res.osmId + ');map_to_area->.a;(nwr[golf](area.a);nwr[natural=water](area.a););out geom;';
-    return overpass(aq).then(function (j) {
+    // Korta tidsgränser (20 s per server) så att en långsam server inte låser appen.
+    var aq = '[out:json][timeout:20];' + res.osmType + '(' + res.osmId + ');map_to_area->.a;(nwr[golf](area.a);nwr[natural=water](area.a););out geom;';
+    return overpass(aq, 0, 22000).then(function (j) {
       var geo = G.buildFromOsm(j, meta);
       if (Object.keys(geo.holes).length || !res.bounds) return geo;
       var b = res.bounds, bb = [b[0] - 0.002, b[1] - 0.003, b[2] + 0.002, b[3] + 0.003].join(',');
-      return overpass('[out:json][timeout:90];(nwr[golf](' + bb + ');nwr[natural=water](' + bb + '););out geom;').then(function (j2) { return G.buildFromOsm(j2, meta); });
+      return overpass('[out:json][timeout:20];(nwr[golf](' + bb + ');nwr[natural=water](' + bb + '););out geom;', 0, 22000).then(function (j2) { return G.buildFromOsm(j2, meta); });
     });
   }
   function teeFromGeo(geo) {
@@ -1462,7 +1463,12 @@
       }).join('') + '</div>';
     } else if (cur) h += '<p class="note">' + esc(t('dirCourseNote')) + '</p>';
     if (pl.err) h += '<p class="warn">' + esc(pl.err) + '</p>';
-    h += '<button class="btn gold big" data-act="play-go"' + (!cur || pl.busy ? ' disabled' : '') + '>' + esc(pl.busy ? t('geoLoading') : t('gameSettings')) + ' »</button>';
+    if (pl.busy) {
+      h += '<div class="busybox" role="status"><span class="spin" aria-hidden="true"></span><span>' + esc(t('geoLoading')) + ' <b id="play-elapsed">' + Math.round((Date.now() - pl.started) / 1000) + ' s</b></span></div>' +
+        '<p class="note" id="play-slow" hidden>' + esc(t('geoSlow')) + '</p><button class="btn ghost wide" data-act="play-cancel">' + esc(t('cancel')) + '</button>';
+    } else {
+      h += '<button class="btn gold big" data-act="play-go"' + (!cur ? ' disabled' : '') + '>' + (pl.err ? esc(t('retry')) : esc(t('gameSettings')) + ' »') + '</button>';
+    }
     return h + '</div>';
   }
   function playSearch() {
@@ -1509,9 +1515,20 @@
     if (!cur) return;
     if (cur.kind === 'saved') { goSetupFromPlay(cur.course, pl.teeId); render(); return; }
     var it = cur.it, res = { name: it.n, osmType: it.t, osmId: it.id, lat: it.lat, lon: it.lon, bounds: it.b };
-    pl.busy = true; pl.err = null; render();
+    var token = uid();
+    pl.busy = token; pl.err = null; pl.started = Date.now(); render();
+    clearInterval(pl.ticker);
+    pl.ticker = setInterval(function () {
+      var el = document.getElementById('play-elapsed');
+      if (!el || pl.busy !== token) { clearInterval(pl.ticker); return; }
+      var s = Math.round((Date.now() - pl.started) / 1000);
+      el.textContent = s + ' s';
+      var hint = document.getElementById('play-slow');
+      if (hint && s >= 15) hint.hidden = false;
+    }, 1000);
     fetchCourseGeo(res).then(function (geo) {
-      pl.busy = false;
+      if (pl.busy !== token) return;
+      pl.busy = false; clearInterval(pl.ticker);
       var course = { id: uid(), name: it.n, club: it.c || '', lat: +it.lat.toFixed(5), lon: +it.lon.toFixed(5), verified: false, geo: geo, tees: [teeFromGeo(geo)] };
       if (osmComplete(geo)) {
         state.courses.push(course); save(); view.flash = t('courseAdded'); goSetupFromPlay(course, course.tees[0].id); render();
@@ -1519,8 +1536,9 @@
         course.isNew = true; view.draft = course; view.errors = []; view.playResume = PLAY_TYPES[pl.type];
         view.tab = 'courses'; view.sub = 'edit'; view.flash = t('completeCard'); window.scrollTo(0, 0); render();
       }
-    }).catch(function () {
-      pl.busy = false; pl.err = t('netError') + (/github\.io$|^localhost$/.test(location.hostname) ? '' : ' ' + t('previewNote')); render();
+    }).catch(function (e) {
+      if (pl.busy !== token) return;
+      pl.busy = false; clearInterval(pl.ticker); pl.err = t('geoFailed') + netDetail(e) + previewSuffix(); render();
     });
   }
 
@@ -2270,6 +2288,7 @@
       case 'pdir': { var pd = v.split(':'), pit = (dir ? dir.items : near.items || []).filter(function (x) { return x.t === pd[0] && String(x.id) === pd[1]; })[0]; if (pit) { view.play.pinned = { kind: 'dir', id: pit.t + ':' + pit.id, name: pit.n, sub: pit.c, lat: pit.lat, lon: pit.lon, it: pit }; view.play.idx = 0; view.play.search = false; } break; }
       case 'play-details': { var pl0 = playCandidates()[view.play.idx]; if (pl0 && pl0.kind === 'saved') { view.tab = 'courses'; onAct('edit-course:' + pl0.id); return; } break; }
       case 'play-go': playGo(); return;
+      case 'play-cancel': view.play.busy = false; clearInterval(view.play.ticker); break;
       case 'play-retry': near.key = null; if (view.play.pos) fetchNearby(view.play.pos); if (!dir) fetchDirectory(); return;
       case 'play-back-course': if (view.play) { view.tab = 'play'; view.sub = null; view.play.step = 'course'; } else { view.tab = 'home'; view.sub = null; } break;
       case 'hole-mode': view.holeMode = view.holeMode === 'hole' ? 'card' : 'hole'; window.scrollTo(0, 0); break;
