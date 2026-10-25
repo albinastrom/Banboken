@@ -193,7 +193,7 @@
       if (k === 'hole') {
         var line = geomOf(el), ref = String(intTag(t.ref) || '');
         if (!ref || line.length < 2) return;
-        cands.push({ ref: ref, par: intTag(t.par), si: intTag(t.handicap), dist: intTag(t.dist), line: line });
+        cands.push({ ref: ref, par: intTag(t.par), si: intTag(t.handicap), dist: intTag(t.dist), line: line, course: t['golf:course'] || t['golf:course:name'] || null });
       } else {
         polysOf(el).forEach(function (p) { polys[k].push(p); });
       }
@@ -208,13 +208,39 @@
         return inside;
       });
     }
-    cands.forEach(function (h) { if (holes[h.ref]) { dup++; return; } holes[h.ref] = h; });
-    Object.keys(holes).forEach(function (ref) { assign(holes[ref], polys); });
+    var loops = splitLoops(cands), loopOut = null;
+    if (loops.length > 1) {
+      loopOut = loops.map(function (lp, i) {
+        var hs = {};
+        lp.forEach(function (h) { delete h.course; if (hs[h.ref]) { dup++; return; } hs[h.ref] = h; });
+        var refs = lp.map(function (h) { return +h.ref; });
+        return { id: String.fromCharCode(65 + i), label: lp.label || null, holes: hs, count: Object.keys(hs).length, from: Math.min.apply(null, refs), to: Math.max.apply(null, refs) };
+      });
+      holes = loopOut[0].holes;
+      loopOut.forEach(function (lo) { Object.keys(lo.holes).forEach(function (r) { assign(lo.holes[r], polys); }); });
+    } else {
+      cands.forEach(function (h) { delete h.course; if (holes[h.ref]) { dup++; return; } holes[h.ref] = h; });
+    }
+    if (!loopOut) Object.keys(holes).forEach(function (ref) { assign(holes[ref], polys); });
     return {
       source: 'osm', osmRef: meta && meta.osmRef, name: meta && meta.name, fetchedAt: new Date().toISOString(),
-      holes: holes, duplicates: dup, outside: outside
+      holes: holes, duplicates: dup, outside: outside, loops: loopOut
     };
   }
+  // Kartdata för en slinga, eller två 9-hålsslingor kombinerade till 18 hål (hål 10–18 = andra slingan).
+  function geoForLoops(geo, ids) {
+    var ls = ids.map(function (id) { return (geo.loops || []).filter(function (l) { return l.id === id; })[0]; }).filter(Boolean);
+    if (!ls.length) return geo;
+    var holes = {}, n = 0;
+    ls.forEach(function (l) {
+      Object.keys(l.holes).map(Number).sort(function (a, b) { return a - b; }).forEach(function (r) {
+        n++; var h = JSON.parse(JSON.stringify(l.holes[String(r)])); h.ref = String(n); h.origRef = String(r); h.loop = l.id; holes[String(n)] = h;
+      });
+    });
+    var out = JSON.parse(JSON.stringify(geo)); out.holes = holes; out.loops = null; out.loopIds = ids; out.duplicates = 0;
+    return out;
+  }
+
   // Overpass-fråga för en banas kartdata: bara de golfobjekt appen använder, inom banans gränser + ca 150 m,
   // med geometrin klippt till samma område (stora sjöar skickas inte i sin helhet).
   var GOLF_KINDS = 'hole|green|bunker|tee|fairway|water_hazard|lateral_water_hazard';
@@ -409,17 +435,129 @@
       var lat = (b.minlat + b.maxlat) / 2, lon = (b.minlon + b.maxlon) / 2;
       items.push({ n: String(name).slice(0, 80), t: e.type, id: e.id, lat: r6([lat, lon])[0], lon: r6([lat, lon])[1],
         b: [b.minlat, b.minlon, b.maxlat, b.maxlon].map(function (v) { return Math.round(v * 1e5) / 1e5; }),
-        c: String(tg['addr:city'] || tg['addr:municipality'] || tg['is_in:municipality'] || '').slice(0, 40), h: intTag(tg.holes) });
+        c: String(tg['addr:city'] || tg['addr:municipality'] || tg['is_in:municipality'] || '').slice(0, 40), h: intTag(tg.holes),
+        op: tg.operator ? String(tg.operator).slice(0, 80) : null });
     });
-    // Samma bana kan finnas som både yta och relation – behåll en per namn inom 1,5 km.
+    // Samma bana kan finnas som både yta och relation. Slå bara ihop när namnet är lika OCH ytorna i stort sett
+    // täcker varandra – två olika banor med samma namn på en klubb får aldrig döljas.
     items.sort(function (a, b) { return a.n.localeCompare(b.n, 'sv'); });
     var out = [];
     items.forEach(function (it) {
-      var dup = out.filter(function (o) { return fold(o.n) === fold(it.n) && dist([o.lat, o.lon], [it.lat, it.lon]) < 1500; })[0];
+      var dup = out.filter(function (o) { return fold(o.n) === fold(it.n) && bboxIoU(o.b, it.b) >= 0.6; })[0];
       if (dup) { if (it.t === 'relation' && dup.t !== 'relation') out[out.indexOf(dup)] = it; return; }
       out.push(it);
     });
     return { items: out, unnamed: unnamed };
+  }
+  function bboxArea(b) { return Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]); }
+  function bboxIoU(a, b) {
+    var i = [Math.max(a[0], b[0]), Math.max(a[1], b[1]), Math.min(a[2], b[2]), Math.min(a[3], b[3])];
+    var ia = bboxArea(i), u = bboxArea(a) + bboxArea(b) - ia;
+    return u > 0 ? ia / u : 0;
+  }
+  function bboxContains(outer, inner) {
+    var tol = 0.0004;
+    return outer[0] - tol <= inner[0] && outer[1] - tol <= inner[1] && outer[2] + tol >= inner[2] && outer[3] + tol >= inner[3] && bboxArea(outer) > bboxArea(inner) * 1.3;
+  }
+
+  // ---------- Golfklubbar med flera banor ----------
+  var GENERIC_WORDS = ['golf', 'golfklubb', 'golfklubben', 'gk', 'gc', 'golfclub', 'club', 'klubb', 'country', 'cc', 'g', 'och', 'and', 'the', 'banan', 'bana', 'course',
+    'golfbana', 'golfbanan', 'links', 'resort', 'golfresort', 'golfcenter', 'golfcentrum', 'golfpark', 'gcc', 'golfbanor', 'gamla', 'nya', 'old', 'new', 'sodra', 'norra', 'ostra', 'vastra'];
+  function nameWords(n) { return fold(n).replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean); }
+  function clubStem(n) {
+    var w = nameWords(n).filter(function (x) { return GENERIC_WORDS.indexOf(x) < 0 && !/^\d+$/.test(x); });
+    return w.length ? w[0].replace(/s$/, '') : null;
+  }
+  // Grupperar banregistret i klubbar: (1) banor som ligger inuti en större klubbyta, (2) samma namnstam
+  // eller samma operatör inom 4 km. Varje bana behåller sitt eget ID.
+  function groupClubs(items) {
+    var n = items.length, parent = [];
+    for (var i = 0; i < n; i++) parent.push(i);
+    function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+    function union(a, b) { a = find(a); b = find(b); if (a !== b) parent[b] = a; }
+    var container = {};
+    for (var a = 0; a < n; a++) for (var b = 0; b < n; b++) {
+      if (a === b) continue;
+      var A = items[a], B = items[b];
+      if (bboxContains(A.b, B.b)) { union(a, b); container[b] = true; container[a] = container[a] || false; items[b]._in = a; }
+      else if (a < b && dist([A.lat, A.lon], [B.lat, B.lon]) < 4000) {
+        var sa = clubStem(A.n), sb = clubStem(B.n);
+        if ((sa && sa === sb) || (A.op && B.op && fold(A.op) === fold(B.op))) union(a, b);
+      }
+    }
+    var groups = {};
+    for (var k = 0; k < n; k++) (groups[find(k)] = groups[find(k)] || []).push(k);
+    return Object.keys(groups).map(function (g0) {
+      var idx = groups[g0], members = idx.map(function (q) { return items[q]; });
+      // Klubbytan: en post som innehåller alla andra.
+      var hostIdx = idx.filter(function (q) { return idx.every(function (o) { return o === q || items[o]._in === q; }); })[0];
+      var host = hostIdx !== undefined && idx.length > 1 ? items[hostIdx] : null;
+      var courses = host ? members.filter(function (m) { return m !== host; }) : members;
+      var name = host ? host.n : commonPrefixName(members.map(function (m) { return m.n; }));
+      var list = courses.map(function (m) { return { item: m, label: courseLabel(m.n, name) }; }).sort(function (x, y) { return x.label.localeCompare(y.label, 'sv'); });
+      var lat = members.reduce(function (s, m) { return s + m.lat; }, 0) / members.length, lon = members.reduce(function (s, m) { return s + m.lon; }, 0) / members.length;
+      return { key: (host || members[0]).t + '/' + (host || members[0]).id, name: name, lat: lat, lon: lon, host: host, courses: list,
+        c: members.map(function (m) { return m.c; }).filter(Boolean)[0] || '' };
+    });
+  }
+  function commonPrefixName(names) {
+    if (names.length === 1) return names[0];
+    var split = names.map(function (s) { return s.split(/\s+/); }), out = [];
+    for (var i = 0; ; i++) {
+      var w = split[0][i];
+      if (w === undefined || !split.every(function (s) { return s[i] !== undefined && fold(s[i]) === fold(w); })) break;
+      out.push(w);
+    }
+    var pre = out.join(' ').replace(/[\s,:–—-]+$/, '');
+    if (pre && nameWords(pre).some(function (x) { return GENERIC_WORDS.indexOf(x) < 0; })) return pre;
+    return names.slice().sort(function (a, b) { return a.length - b.length; })[0];
+  }
+  function courseLabel(name, club) {
+    if (fold(name) === fold(club)) return name;
+    var cw = club.split(/\s+/), nw = name.split(/\s+/), i = 0;
+    while (i < cw.length && i < nw.length && fold(cw[i]) === fold(nw[i])) i++;
+    var rest = nw.slice(i).join(' ').replace(/^[\s,:–—-]+/, '').trim();
+    return rest ? rest.charAt(0).toUpperCase() + rest.slice(1) : name;
+  }
+  function searchClubs(clubs, q, pos, limit) {
+    var f = fold(q).trim(), words = f ? f.split(/\s+/) : [];
+    var list = clubs.filter(function (c) {
+      if (!words.length) return true;
+      var hay = fold(c.name + ' ' + c.c + ' ' + c.courses.map(function (x) { return x.item.n; }).join(' '));
+      return words.every(function (w) { return hay.indexOf(w) >= 0; });
+    }).map(function (c) { return { club: c, d: pos ? dist(pos, [c.lat, c.lon]) : null }; });
+    if (pos) list.sort(function (a, b) { return a.d - b.d; });
+    else list.sort(function (a, b) { return a.club.name.localeCompare(b.club.name, 'sv'); });
+    return list.slice(0, limit || 60);
+  }
+
+  // Delar upp hål i slingor när samma hålnummer finns flera gånger (en klubbyta med flera banor):
+  // följer banans väg – nästa håls tee ska ligga nära föregående håls green. Uttrycklig taggning går först.
+  function splitLoops(cands) {
+    var counts = {};
+    cands.forEach(function (h) { counts[h.ref] = (counts[h.ref] || 0) + 1; });
+    if (!Object.keys(counts).some(function (r) { return counts[r] > 1; })) return [cands];
+    if (cands.every(function (h) { return h.course; })) {
+      var by = {}; cands.forEach(function (h) { (by[h.course] = by[h.course] || []).push(h); });
+      return Object.keys(by).sort().map(function (k) { var l = by[k]; l.label = k; return l; });
+    }
+    var unused = cands.slice(), loops = [];
+    while (unused.length) {
+      var minRef = Math.min.apply(null, unused.map(function (h) { return +h.ref; }));
+      var starts = unused.filter(function (h) { return +h.ref === minRef; });
+      var cur = starts[0], loop = [cur];
+      unused.splice(unused.indexOf(cur), 1);
+      for (;;) {
+        var opts = unused.filter(function (h) { return +h.ref === +cur.ref + 1; });
+        if (!opts.length) break;
+        var end = cur.line[cur.line.length - 1];
+        var best = opts.map(function (h) { return { h: h, d: dist(end, h.line[0]) }; }).sort(function (x, y) { return x.d - y.d; })[0];
+        if (best.d > 450) break;
+        loop.push(best.h); unused.splice(unused.indexOf(best.h), 1); cur = best.h;
+      }
+      loops.push(loop);
+    }
+    return loops;
   }
   function searchDirectory(items, q, pos, limit) {
     var f = fold(q).trim(), list = items;
@@ -441,7 +579,7 @@
   var Geo = {
     dist: dist, bearing: bearing, proj: proj, centroid: centroid, polylineInfo: polylineInfo, lineLength: lineLength,
     greenDistances: greenDistances, hazardsAhead: hazardsAhead, doglegs: doglegs, nearestHole: nearestHole,
-    windRelative: windRelative, buildFromOsm: buildFromOsm, courseQuery: courseQuery, boundsQuery: boundsQuery, coverage: coverage, demoGeometry: demoGeometry,
+    windRelative: windRelative, buildFromOsm: buildFromOsm, splitLoops: splitLoops, geoForLoops: geoForLoops, groupClubs: groupClubs, searchClubs: searchClubs, clubStem: clubStem, courseLabel: courseLabel, bboxIoU: bboxIoU, courseQuery: courseQuery, boundsQuery: boundsQuery, coverage: coverage, demoGeometry: demoGeometry,
     createGpsFilter: createGpsFilter, gpsQuality: gpsQuality, offsetPoint: offsetPoint,
     pointInPolyXY: pointInPolyXY, parseDirectory: parseDirectory, searchDirectory: searchDirectory, fold: fold, lon2tile: lon2tile, lat2tile: lat2tile, tile2lon: tile2lon, tile2lat: tile2lat
   };

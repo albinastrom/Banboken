@@ -183,10 +183,10 @@
     var skip = tee.unrated && (tee.cr === null || tee.cr === undefined) && (tee.slope === null || tee.slope === undefined);
     if (!skip && !(tee.cr > 50 && tee.cr < 90)) errors.push('Course Rating ska vara mellan 50 och 90');
     if (!skip && !(tee.slope >= 55 && tee.slope <= 155)) errors.push('Slope Rating ska vara mellan 55 och 155');
-    if (!tee.holes || tee.holes.length !== 18) errors.push('18 hål krävs');
+    if (!tee.holes || (tee.holes.length !== 18 && tee.holes.length !== 9)) errors.push('9 eller 18 hål krävs');
     else {
-      var sis = tee.holes.map(function (h) { return h.si; }).slice().sort(function (a, b) { return a - b; });
-      for (var i = 0; i < 18; i++) if (sis[i] !== i + 1) { errors.push('hålindex måste vara 1–18, var och en en gång'); break; }
+      var nh = tee.holes.length, sis = tee.holes.map(function (h) { return h.si; }).slice().sort(function (a, b) { return a - b; });
+      for (var i = 0; i < nh; i++) if (sis[i] !== i + 1) { errors.push('hålindex måste vara 1–' + nh + ', var och en en gång'); break; }
       tee.holes.forEach(function (h, i) {
         if (!(h.par >= 3 && h.par <= 6)) errors.push('par på hål ' + (i + 1) + ' ska vara 3–6');
       });

@@ -623,3 +623,23 @@ Object.assign(window.I18N.en, {
   gpsOffNoMap: 'GPS distances are off – the course has no map data.', scoreStillWorks: 'Score, putts and stats work as usual.',
   fetchMapNow: 'Load map data now', geoLoaded: 'Map data loaded – GPS distances are on.'
 });
+
+/* Klubbar med flera banor */
+Object.assign(window.I18N.sv, {
+  nCourses: '{n} banor', oneCourse: '1 bana', holesUnknown: 'antal hål okänt', noGpsShort: 'utan GPS', fromSlopeTable: 'från slopetabellen',
+  chooseCourseAtClub: 'Välj bana', clubHasCourses: 'Klubben har {n} banor. Välj vilken ni spelar.', addCourseToClub: 'Lägg till en bana på klubben',
+  addCourseFlash: 'Ge banan ett namn och fyll i par och index från scorekortet.', libCourseNote: 'Banan finns i slopetabellen men saknar kartdata. Du kan spela med score; GPS-avstånd går att lägga till senare.',
+  libNeedsHoles: 'Slopetabellen saknar håldata för banan. Fyll i par och index från scorekortet och tryck Spara.',
+  loopsFound: 'Kartdatan innehåller {n} slingor', loopsHelp: 'Klubbens hål är inlagda som en gemensam yta. Välj vilken slinga ni spelar – varje slinga sparas som en egen bana med eget scorekort.',
+  loopWord: 'Slinga', holeWord: 'hål', loopCombo: 'hål 1–9 {a}, hål 10–18 {b}', saveAllLoops: 'Spara alla slingor som egna banor', chooseLoop: 'Välj slinga',
+  loopsSaved: '{n} banor sparade.', loopsSkipped: '{n} slingor saknar par eller index i kartdatan och sparades inte – välj dem en i taget för att fylla i.'
+});
+Object.assign(window.I18N.en, {
+  nCourses: '{n} courses', oneCourse: '1 course', holesUnknown: 'holes unknown', noGpsShort: 'no GPS', fromSlopeTable: 'from slope table',
+  chooseCourseAtClub: 'Choose course', clubHasCourses: 'The club has {n} courses. Choose the one you are playing.', addCourseToClub: 'Add a course to the club',
+  addCourseFlash: 'Name the course and enter par and index from the scorecard.', libCourseNote: 'The course is in the slope table but has no map data. You can keep score; GPS distances can be added later.',
+  libNeedsHoles: 'The slope table has no hole data for this course. Enter par and index from the scorecard and tap Save.',
+  loopsFound: 'The map data contains {n} loops', loopsHelp: 'The club’s holes are mapped as one shared area. Choose the loop you are playing – each loop is saved as its own course with its own scorecard.',
+  loopWord: 'Loop', holeWord: 'holes', loopCombo: 'holes 1–9 {a}, holes 10–18 {b}', saveAllLoops: 'Save all loops as separate courses', chooseLoop: 'Choose loop',
+  loopsSaved: '{n} courses saved.', loopsSkipped: '{n} loops have no par or index in the map data and were not saved – choose them one at a time to fill in.'
+});

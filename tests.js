@@ -208,6 +208,42 @@ var dj = { elements: [
       ] };
       var nbg = Geo.buildFromOsm(nb, { osmRef: 'way/9', boundary: 'way/9' });
       eq('Grannbanans hål med samma nummer sorteras bort via banans kontur', [nbg.holes['1'].par, nbg.duplicates, nbg.outside], [4, 0, 1]);
+// ---------- Klubbar med flera banor ----------
+      function crs(id, name, b, tags) { return { type: 'way', id: id, tags: Object.assign({ leisure: 'golf_course', name: name }, tags || {}), bounds: { minlat: b[0], minlon: b[1], maxlat: b[2], maxlon: b[3] } }; }
+      var cdir = Geo.parseDirectory({ elements: [
+        crs(1, 'Bokskogens Golfklubb', [55.500, 13.200, 55.530, 13.260]),
+        crs(2, 'Bokskogens Golfklubb', [55.500, 13.200, 55.515, 13.228]),
+        crs(3, 'Bokskogens Golfklubb', [55.516, 13.230, 55.530, 13.259]),
+        crs(4, 'Fiktiva GK Gamla banan', [57.000, 12.000, 57.010, 12.020]),
+        crs(5, 'Fiktiva GK Nya banan', [57.011, 12.000, 57.020, 12.020]),
+        crs(6, 'Fiktiva GK Gamla banan', [57.0001, 12.0001, 57.0101, 12.0201], {}),
+        crs(7, 'Ensamma GK', [58.0, 14.0, 58.01, 14.02])
+      ] });
+      eq('Banregister: banor med samma namn men olika ytor döljs inte', cdir.items.filter(function (x) { return x.n === 'Bokskogens Golfklubb'; }).length, 3);
+      eq('Banregister: verklig dubblett (samma namn, samma yta) slås ihop', cdir.items.filter(function (x) { return x.n === 'Fiktiva GK Gamla banan'; }).length, 1);
+      var clubs = Geo.groupClubs(cdir.items);
+      var bok = clubs.filter(function (c) { return /Bokskog/.test(c.name); })[0], fik = clubs.filter(function (c) { return /Fiktiva/.test(c.name); })[0];
+      eq('Klubb: banor inuti klubbytan grupperas, klubbytan själv är inte en bana', [clubs.length, bok.courses.length, !!bok.host], [3, 2, true]);
+      eq('Klubb: namnstam grupperar "Gamla banan" och "Nya banan"', [fik.name, fik.courses.map(function (c) { return c.label; })], ['Fiktiva GK', ['Gamla banan', 'Nya banan']]);
+      eq('Klubb: varje bana behåller eget ID', fik.courses.map(function (c) { return c.item.id; }).sort(), [4, 5]);
+      eq('Sök klubb via banans namn', Geo.searchClubs(clubs, 'nya banan')[0].club.name, 'Fiktiva GK');
+      eq('Ensam bana blir klubb med en bana', clubs.filter(function (c) { return c.name === 'Ensamma GK'; })[0].courses.length, 1);
+      // Klubbyta med två 18-hålsslingor (36 hål med samma nummer)
+      var two = [];
+      for (var lp = 0; lp < 2; lp++) for (var hh = 0; hh < 18; hh++) {
+        var x0 = lp * 5000 + hh * 150;
+        two.push(way(900 + lp * 100 + hh, { golf: 'hole', ref: String(hh + 1), par: String(lp ? 5 : 4) }, [L(x0, 0), L(x0 + 100, 0)]));
+      }
+      var tg = Geo.buildFromOsm({ elements: two }, { osmRef: 'way/1' });
+      eq('Klubbyta med 36 hål delas i två slingor om 18', [tg.loops.length, tg.loops[0].count, tg.loops[1].count], [2, 18, 18]);
+      eq('Slingorna blandas aldrig: varje slinga har samma par på alla hål', tg.loops.map(function (l) { return Object.keys(l.holes).map(function (r) { return l.holes[r].par; }).filter(function (p, i, a) { return a.indexOf(p) === i; }); }), [[4], [5]]);
+      var nine = [];
+      for (var l3 = 0; l3 < 3; l3++) for (var h9 = 0; h9 < 9; h9++) nine.push(way(700 + l3 * 10 + h9, { golf: 'hole', ref: String(h9 + 1), par: '4' }, [L(l3 * 4000 + h9 * 150, 0), L(l3 * 4000 + h9 * 150 + 100, 0)]));
+      var g27 = Geo.buildFromOsm({ elements: nine }, { osmRef: 'way/2' });
+      var comb = Geo.geoForLoops(g27, ['A', 'C']);
+      eq('27 hål = tre 9-hålsslingor; två kan kombineras till 18', [g27.loops.length, Object.keys(comb.holes).length, comb.holes['10'].loop, comb.holes['10'].origRef], [3, 18, 'C', '1']);
+      var tagged = [way(1, { golf: 'hole', ref: '1', 'golf:course': 'Gamla' }, [L(0, 0), L(0, 100)]), way(2, { golf: 'hole', ref: '1', 'golf:course': 'Nya' }, [L(50, 0), L(50, 100)])];
+      eq('Uttrycklig taggning (golf:course) används först', Geo.buildFromOsm({ elements: tagged }, {}).loops.map(function (l) { return l.label; }), ['Gamla', 'Nya']);
       eq('Demo-geometri: 18 hål med green', Geo.coverage(demo).greens, 18);
     }
 

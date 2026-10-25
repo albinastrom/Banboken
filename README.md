@@ -112,6 +112,17 @@ Coachen i etapp 4 är regelbaserad och gratis. En språkmodell (t.ex. Claude via
 
 Course Rating och Slope finns inte i öppna data (de ägs av Svenska Golfförbundet). Nya banor sparas därför som *CR/Slope saknas*: du kan spela direkt med GPS och bruttoscore. Fyll i CR och Slope från scorekortet, klubbens hemsida eller Min Golf, så räknas handicap från nästa rond. Matcher med handicap kräver CR och Slope.
 
+## Golfklubbar med flera banor
+**Datamodell:** Klubb → Bana → Tee. Varje bana är en egen post med eget ID, egna tees, egen håldata (par, index, längd) och egen kartdata; ronder, scorekort och statistik pekar på banans ID, så två banor på samma klubb blandas aldrig. Banor på samma klubb har gemensamt klubbnamn (`club`) och klubbnyckel (`clubKey`).
+
+**Så identifieras klubbens banor (generellt, för alla klubbar):**
+1. *Kartdata:* banor vars yta ligger inuti en större klubbyta grupperas under klubben; banor med samma namnstam (t.ex. "Bokskogens … Gamla banan" och "… Nya banan") eller samma operatör inom 4 km grupperas också. Två banor med samma namn döljs aldrig – bara verkliga dubbletter (samma namn *och* i stort sett samma yta) slås ihop.
+2. *Slingor i en gemensam yta:* om en klubb är inlagd som en yta med t.ex. 36 hål delas hålen upp i slingor genom att följa banan (nästa håls tee nära föregående green), eller via taggen `golf:course` om den finns. Användaren väljer slinga; 9-hålsslingor kan kombineras till 18 hål.
+3. *Slopetabellen:* banor som finns i slopetabellen för klubben (Banadministration) visas också, även om de saknas i kartdata.
+4. *Manuellt:* "Lägg till en bana på klubben" skapar en ny bana med klubben förifylld; par och index fylls i från scorekortet (tomma fält, inga påhittade värden).
+
+**I appen:** "Alla banor i Sverige" visar klubbar; klubbar med flera banor fälls ut. I "Spela golf" visas klubben med alla sina banor (namn och antal hål) och ingen bana väljs automatiskt när det finns flera. 9-hålsbanor stöds (9-hålsvärdering, hålindex 1–9).
+
 ## Hämtning av kartdata (OpenStreetMap)
 **Orsak till HTTP 504 (åtgärdat):** den tidigare frågan använde `map_to_area` (en av Overpass tyngsta operationer), hämtade alla golfobjekt (`nwr[golf]`) och varje sjö som korsade banan med hela sin geometri (`nwr[natural=water] … out geom`). Nära stora sjöar blev svaret enormt, servern hann inte klart och svarade 504. Vid tomt svar gjordes dessutom en andra, större fråga.
 
