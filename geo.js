@@ -88,11 +88,12 @@
       var inside = pointInPolyXY([0, 0], poly);
       if (mid < 0.5) return { front: null, mid: 0, back: null, inside: true, center: c, exact: true };
       var u = [cxy[0] / mid, cxy[1] / mid], hits = rayHits(u, poly).filter(function (t) { return t > 0; });
+      var fT = inside || !hits.length ? null : Math.min.apply(null, hits), bT = hits.length ? Math.max.apply(null, hits) : null;
+      // Punkterna på greenens kant längs spellinjen; avstånden räknas sedan geodetiskt (haversine).
+      var fP = fT === null ? null : P.ll([u[0] * fT, u[1] * fT]), bP = bT === null ? null : P.ll([u[0] * bT, u[1] * bT]);
       return {
-        front: inside || !hits.length ? null : Math.min.apply(null, hits),
-        mid: mid,
-        back: hits.length ? Math.max.apply(null, hits) : null,
-        inside: inside, center: c, exact: true
+        front: fP ? dist(player, fP) : null, mid: dist(player, c), back: bP ? dist(player, bP) : null,
+        frontPt: fP, backPt: bP, inside: inside, center: c, exact: true
       };
     }
     if (fallbackCenter) return { front: null, mid: dist(player, fallbackCenter), back: null, inside: false, center: fallbackCenter, exact: false };
@@ -308,6 +309,65 @@
   }
 
 
+
+  // ---------- Live-GPS: filtrering av positioner ----------
+  // Tar emot råa positioner {lat, lon, acc, ts, speed} och avgör vilka som ska användas.
+  function createGpsFilter(opts) {
+    var o = Object.assign({ maxAcc: 150, maxSpeed: 12, staleMs: 20000, stillAlpha: 0.35, minNoise: 3 }, opts || {});
+    var last = null, rejects = [], rawPrev = null, rawPrev2 = null;
+    function remember(fix) { rawPrev2 = rawPrev; rawPrev = fix; }
+    function push(fix, now) { var r = pushInner(fix, now); if (r.ok) remember(fix); return r; }
+    function pushInner(fix, now) {
+      if (!fix || !isFinite(fix.lat) || !isFinite(fix.lon) || !isFinite(fix.acc) || !isFinite(fix.ts)) return { ok: false, reason: 'invalid' };
+      if (now - fix.ts > o.staleMs) return { ok: false, reason: 'stale' };
+      if (last && fix.ts <= last.ts) return { ok: false, reason: 'old' };
+      if (fix.acc > o.maxAcc) return { ok: false, reason: 'inaccurate' };
+      if (last) {
+        var d = dist([last.lat, last.lon], [fix.lat, fix.lon]), dt = Math.max(0.5, (fix.ts - last.ts) / 1000);
+        // Orimligt hopp: längre än man hinner förflytta sig (även med golfbil) plus mätfelen.
+        if (d > o.maxSpeed * dt + last.acc + fix.acc) {
+          rejects.push(fix); if (rejects.length > 6) rejects.shift();
+          var n = rejects.length;
+          if (n >= 3) {
+            var a = rejects[n - 3], b = rejects[n - 1], c = rejects[n - 2];
+            var tight = function (p, q) { return dist([p.lat, p.lon], [q.lat, q.lon]) <= o.maxSpeed * Math.max(0.5, (q.ts - p.ts) / 1000) + p.acc + q.acc; };
+            if (tight(a, c) && tight(c, b)) { // tre samstämmiga positioner på nytt ställe = verklig förflyttning
+              rejects = []; last = { lat: b.lat, lon: b.lon, acc: b.acc, ts: b.ts, still: false };
+              return { ok: true, pos: last, reason: 'relocated' };
+            }
+          }
+          return { ok: false, reason: 'jump' };
+        }
+        rejects = [];
+        // Rörelse känns igen på telefonens fart, eller på att råpositionerna glider bort åt samma håll.
+        var drift = rawPrev2 ? dist([rawPrev2.lat, rawPrev2.lon], [fix.lat, fix.lon]) : 0;
+        var noise = Math.max(o.minNoise, Math.min(fix.acc, last.acc, 10));
+        var moving = (isFinite(fix.speed) && fix.speed !== null && fix.speed > 0.6) || drift > noise;
+        if (!moving && d < noise) { // stilla: dämpa brus försiktigt
+          var al = o.stillAlpha;
+          last = { lat: last.lat + (fix.lat - last.lat) * al, lon: last.lon + (fix.lon - last.lon) * al, acc: fix.acc, ts: fix.ts, still: true };
+          return { ok: true, pos: last, reason: 'still' };
+        }
+      }
+      var first = !last;
+      last = { lat: fix.lat, lon: fix.lon, acc: fix.acc, ts: fix.ts, still: false };
+      return { ok: true, pos: last, reason: first ? 'first' : 'move' };
+    }
+    return { push: push, last: function () { return last; }, reset: function () { last = null; rejects = []; rawPrev = rawPrev2 = null; } };
+  }
+  // GPS-kvalitet för visning: none | lost | weak | good
+  function gpsQuality(pos, now, opts) {
+    var o = Object.assign({ lostMs: 15000, weakAcc: 15 }, opts || {});
+    if (!pos) return 'none';
+    if (now - pos.ts > o.lostMs) return 'lost';
+    return pos.acc > o.weakAcc ? 'weak' : 'good';
+  }
+  // Förflyttning i meter relativt en riktning (framåt = bäring), för testläget.
+  function offsetPoint(p, bearingDeg, forward, right) {
+    var P = proj(p), b = bearingDeg * D, u = [Math.sin(b), Math.cos(b)], rgt = [u[1], -u[0]];
+    return P.ll([u[0] * forward + rgt[0] * right, u[1] * forward + rgt[1] * right]);
+  }
+
   // ---------- Banregister (alla golfbanor i ett land från OpenStreetMap) ----------
   function fold(s) {
     return String(s || '').toLowerCase().replace(/[åä]/g, 'a').replace(/ö/g, 'o').replace(/[éè]/g, 'e').replace(/ü/g, 'u');
@@ -356,6 +416,7 @@
     dist: dist, bearing: bearing, proj: proj, centroid: centroid, polylineInfo: polylineInfo, lineLength: lineLength,
     greenDistances: greenDistances, hazardsAhead: hazardsAhead, doglegs: doglegs, nearestHole: nearestHole,
     windRelative: windRelative, buildFromOsm: buildFromOsm, coverage: coverage, demoGeometry: demoGeometry,
+    createGpsFilter: createGpsFilter, gpsQuality: gpsQuality, offsetPoint: offsetPoint,
     pointInPolyXY: pointInPolyXY, parseDirectory: parseDirectory, searchDirectory: searchDirectory, fold: fold, lon2tile: lon2tile, lat2tile: lat2tile, tile2lon: tile2lon, tile2lat: tile2lat
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Geo;

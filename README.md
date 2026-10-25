@@ -110,6 +110,19 @@ Coachen i etapp 4 är regelbaserad och gratis. En språkmodell (t.ex. Claude via
 
 Course Rating och Slope finns inte i öppna data (de ägs av Svenska Golfförbundet). Nya banor sparas därför som *CR/Slope saknas*: du kan spela direkt med GPS och bruttoscore. Fyll i CR och Slope från scorekortet, klubbens hemsida eller Min Golf, så räknas handicap från nästa rond. Matcher med handicap kräver CR och Slope.
 
+## Live-GPS
+- **En enda GPS-prenumeration** per rond (`watchPosition` med `enableHighAccuracy: true, maximumAge: 0, timeout: 10000`). Den stoppas när du lämnar hålvyn, avslutar ronden eller låser skärmen, och startar om när du kommer tillbaka.
+- **Filter** för varje position: tidsstämpeln måste vara ny (högst 20 s gammal och nyare än förra), noggrannheten bättre än 150 m, och orimliga hopp (snabbare än 12 m/s plus mätfelen) avvisas. Tre samstämmiga positioner på ett nytt ställe godkänns, så appen hämtar sig efter t.ex. en tur med golfbil. När du står still dämpas bruset försiktigt; när telefonen rapporterar att du rör dig följer markören direkt.
+- **Avstånd** till greenens framkant, mitt och bakkant räknas geodetiskt (haversine) från din aktuella position, längs linjen mot greenens mitt. Saknar kartdata greenens kontur visas en uppmaning att registrera fram/mitt/bak – stå på punkten och tryck *Min position* (kräver ±10 m), eller markera på satellitbilden. Punkterna sparas på banan och synkas.
+- **Status**: GPS aktiv ±X m · låg noggrannhet · söker · signal borta (med hur gammal senaste position är) · saknar behörighet. Avstånden stryks över när signalen är borta – en gammal position visas aldrig som aktuell.
+- **Karta**: blå markör med noggrannhetscirkel, streckad linje till valt mål (eller greenens mitt), *Följ mig* (mjuk följning), *Centrera*, dra för att flytta och nyp för att zooma. Manuell flytt pausar följningen.
+- **GPS-testläge** (Profil → Starta GPS-testläge): simulerade rörelser (20 m fram/bak/vänster/höger, stå still med brus, tappa signal, tryck på kartan). Positionerna går genom samma filter som riktig GPS men visas alltid som **SIMULERAD GPS** i orange.
+
+### Begränsningar på telefonen
+- **Ingen GPS i bakgrunden.** Webbappar får inte position när skärmen är låst eller appen ligger i bakgrunden (varken iPhone eller Android). Knappen *Skärmen tänd* håller skärmen på under ronden där webbläsaren stöder det (Screen Wake Lock); den syns bara om telefonen stöder funktionen.
+- Noggrannheten kommer från telefonen: utomhus normalt ±3–10 m. Under träd och nära byggnader blir den sämre – då visas varningen.
+- På iPhone: Inställningar → Integritet och säkerhet → Platstjänster → Safari-webbplatser → *Vid användning av appen* och *Exakt plats* på.
+
 ## Etapp 5 – färdig produkt
 
 ### Molnsynk och konto (gratis, ca 10 minuter från iPhone)

@@ -150,6 +150,41 @@ var dj = { elements: [
       eq('Banregister: dubbletter slås ihop, range och namnlösa tas bort', [dir.items.length, dir.unnamed, dir.items[0].t], [2, 1, 'relation']);
       eq('Banregister: sök utan å/ä/ö-krav', Geo.searchDirectory(dir.items, 'osteraker').map(function (x) { return x.it.n; }), ['Österåkers GK']);
       eq('Banregister: sortering efter avstånd', Geo.searchDirectory(dir.items, '', [59.465, 18.31])[0].it.n, 'Österåkers GK');
+// ---------- Live-GPS: scenarier ----------
+      var gC = L(0, 300), gPoly = sq(-12, 288, 12, 312), teeP = L(0, 0);
+      var d0 = Geo.greenDistances(teeP, gPoly);
+      eq('GPS 1: på tee – fram/mitt/bak 288/300/312 m', [Math.round(d0.front), Math.round(d0.mid), Math.round(d0.back)], [288, 300, 312]);
+      eq('GPS 1: mitt räknas med haversine', Math.round(d0.mid), Math.round(Geo.dist(teeP, Geo.centroid(gPoly))));
+      var fwd = Geo.offsetPoint(teeP, 0, 20, 0);
+      eq('GPS 2: 20 m framåt → 280 m till mitt', Math.round(Geo.greenDistances(fwd, gPoly).mid), 280);
+      var rgt = Geo.offsetPoint(teeP, 0, 0, 20);
+      eq('GPS 3: 20 m åt höger → √(300²+20²) ≈ 301 m', Math.round(Geo.greenDistances(rgt, gPoly).mid), Math.round(Math.sqrt(300 * 300 + 400)));
+      eq('GPS 3: framkant följer ny spellinje', Math.round(Geo.greenDistances(rgt, gPoly).front), Math.round(288 * Math.sqrt(300 * 300 + 400) / 300));
+      var bwd = Geo.offsetPoint(teeP, 0, -20, 0);
+      eq('GPS 4: 20 m bakåt → 320 m till mitt', Math.round(Geo.greenDistances(bwd, gPoly).mid), 320);
+      var F = Geo.createGpsFilter(), T0 = 1000000;
+      eq('Filter: första positionen godkänns', F.push({ lat: teeP[0], lon: teeP[1], acc: 4, ts: T0 }, T0).reason, 'first');
+      var maxDev = 0;
+      [[1.5, -1], [-2, 1.5], [1, 2], [-1.5, -2], [2, 0.5], [-1, 1]].forEach(function (n, k) {
+        var np = Geo.offsetPoint(teeP, 0, n[0], n[1]), r5 = F.push({ lat: np[0], lon: np[1], acc: 5, ts: T0 + (k + 1) * 1000 }, T0 + (k + 1) * 1000);
+        maxDev = Math.max(maxDev, Geo.dist(teeP, [r5.pos.lat, r5.pos.lon]));
+      });
+      eq('GPS 5: står stilla – markören rör sig mindre än bruset (≤ 1,5 m)', maxDev <= 1.5, true);
+      var jp = Geo.offsetPoint(teeP, 0, 400, 0);
+      eq('Filter: orimligt hopp 400 m på 1 s avvisas', F.push({ lat: jp[0], lon: jp[1], acc: 5, ts: T0 + 8000 }, T0 + 8000).reason, 'jump');
+      var w1 = Geo.offsetPoint(teeP, 0, 1.4, 0);
+      var rw = F.push({ lat: w1[0], lon: w1[1], acc: 4, ts: T0 + 9000, speed: 1.4 }, T0 + 9000);
+      eq('Filter: när man börjar gå (fart > 0,6 m/s) följer markören direkt', [rw.reason, Math.round(Geo.dist(teeP, [rw.pos.lat, rw.pos.lon]) * 10) / 10], ['move', 1.4]);
+      eq('Filter: gammal tidsstämpel avvisas', F.push({ lat: w1[0], lon: w1[1], acc: 4, ts: T0 + 9000 }, T0 + 9500).reason, 'old');
+      eq('Filter: position äldre än 20 s avvisas', Geo.createGpsFilter().push({ lat: 1, lon: 1, acc: 4, ts: T0 }, T0 + 25000).reason, 'stale');
+      eq('Filter: noggrannhet sämre än 150 m avvisas', Geo.createGpsFilter().push({ lat: 1, lon: 1, acc: 300, ts: T0 }, T0).reason, 'inaccurate');
+      var F2 = Geo.createGpsFilter(); F2.push({ lat: teeP[0], lon: teeP[1], acc: 4, ts: T0 }, T0);
+      var far = Geo.offsetPoint(teeP, 90, 2000, 0), rr = [];
+      for (var q2 = 1; q2 <= 3; q2++) rr.push(F2.push({ lat: far[0], lon: far[1], acc: 5, ts: T0 + q2 * 1000 }, T0 + q2 * 1000).reason);
+      eq('Filter: tre samstämmiga positioner på nytt ställe godkänns (återhämtning)', rr, ['jump', 'jump', 'relocated']);
+      eq('GPS 6: ingen ny position på 16 s → signal förlorad', Geo.gpsQuality({ acc: 5, ts: T0 }, T0 + 16000), 'lost');
+      eq('GPS-status: ±25 m → låg noggrannhet', Geo.gpsQuality({ acc: 25, ts: T0 }, T0 + 1000), 'weak');
+      eq('GPS-status: ±5 m → bra', Geo.gpsQuality({ acc: 5, ts: T0 }, T0 + 1000), 'good');
       eq('Demo-geometri: 18 hål med green', Geo.coverage(demo).greens, 18);
     }
 

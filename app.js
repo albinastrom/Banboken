@@ -34,7 +34,7 @@
       friends: [],
       bag: [],
       baseline: null,
-      ui: { showDemo: false, statsN: 10, sat: true, gpsAuto: false, mapOpen: true, shotLog: false, trendMetric: 'points', sgBase: 'personal' }
+      ui: { showDemo: false, statsN: 10, sat: true, gpsAuto: false, mapOpen: true, wakeLock: false, shotLog: false, trendMetric: 'points', sgBase: 'personal' }
     };
   }
 
@@ -71,38 +71,96 @@
     return G.demoGeometry([56.95, 15.05], c.pars.map(function (p, i) { return { par: p, si: c.sis[i], length: c.yellow[i] }; }));
   }
   function teePoint(h) { return h.tees && h.tees[0] ? G.centroid(h.tees[0]) : h.line[0]; }
-  function greenCenter(h) { return h.green ? G.centroid(h.green) : h.line[h.line.length - 1]; }
   function posLL() { return gps.pos ? [gps.pos.lat, gps.pos.lon] : null; }
 
+  // ======================= LIVE-GPS =======================
+  // En enda GPS-prenumeration per rond. Varje rå position passerar ett filter (tidsstämpel, noggrannhet,
+  // orimliga hopp, försiktig stabilisering) innan den används. Testläget skickar simulerade positioner
+  // genom samma filter men visas alltid tydligt som SIMULERAD.
+  var gpsF = G.createGpsFilter();
+  gps.test = false; gps.simOffset = 0; gps.lastFixAt = 0; gps.lastRestart = 0; gps.watchdog = null; gps.rejected = 0;
+  gps.mv = { k: 1, tx: 0, ty: 0, follow: false, key: null };
+  var wakeLock = null;
+
+  function gpsNow() { return Date.now() + (gps.test ? gps.simOffset : 0); }
+  // Signalen räknas som borta efter 15 s om telefonen rapporterat fel/tidsgräns, annars efter 45 s utan uppdatering
+  // (vissa telefoner skickar inga nya positioner när man står helt still).
+  function gpsQ() { return G.gpsQuality(gps.pos, gpsNow(), { lostMs: gps.errSinceFix ? 15000 : 45000 }); }
+  function fixAge() { return gps.pos ? Math.round((gpsNow() - gps.pos.ts) / 1000) : null; }
+  function gpsState() {
+    if (gps.status === 'denied') return 'denied';
+    if (gps.test && !gps.pos) return 'testIdle';
+    if (!gps.test && gps.watchId === null) return gps.status === 'unavailable' ? 'unavailable' : 'off';
+    var q = gpsQ();
+    return q === 'none' ? 'searching' : q;
+  }
+  function ingest(fix) {
+    var r = gpsF.push(fix, gpsNow());
+    if (!r.ok) { gps.rejected++; gps.lastReject = r.reason; refreshGps(); return; }
+    gps.pos = r.pos; gps.status = 'on'; gps.lastFixAt = Date.now(); gps.errSinceFix = false;
+    afterPosition();
+  }
+  function onPos(p) {
+    if (gps.test) return;
+    var ts = p.timestamp && p.timestamp > 1e12 ? p.timestamp : Date.now();
+    ingest({ lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, ts: ts, speed: p.coords.speed });
+  }
+  function onPosErr(e) {
+    if (e.code === 1) { gpsStop(); gps.status = 'denied'; state.ui.gpsAuto = false; save(); refreshGps(true); return; }
+    // Tidsgräns (3) och tillfälligt avbrott (2): prenumerationen fortsätter; vakten visar status och startar om vid behov.
+    gps.errSinceFix = true;
+    if (!gps.pos && e.code === 2) gps.status = 'unavailable';
+    refreshGps();
+  }
+  function watchOpts() { return { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }; }
+  function startWatch() {
+    try { gps.watchId = navigator.geolocation.watchPosition(onPos, onPosErr, watchOpts()); gps.lastRestart = Date.now(); }
+    catch (e) { gps.status = 'unavailable'; gps.watchId = null; }
+  }
   function gpsStart() {
-    if (gps.watchId !== null || gps.sim) return;
+    if (gps.test) { startWatchdog(); return; }
+    if (gps.watchId !== null) return;
     if (!navigator.geolocation) { gps.status = 'unavailable'; refreshGps(); return; }
-    gps.status = 'asking';
-    try {
-      gps.watchId = navigator.geolocation.watchPosition(onPos, onPosErr, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
-    } catch (e) { gps.status = 'unavailable'; gps.watchId = null; }
+    gps.status = 'asking'; gpsF.reset(); gps.pos = null;
+    startWatch(); startWatchdog();
   }
   function gpsStop() {
     if (gps.watchId !== null) { try { navigator.geolocation.clearWatch(gps.watchId); } catch (e) {} gps.watchId = null; }
-    if (gps.status === 'on' || gps.status === 'asking') gps.status = 'off';
+    if (gps.watchdog) { clearInterval(gps.watchdog); gps.watchdog = null; }
+    // Visa aldrig en gammal position som aktuell: positionen nollställs när spårningen stoppas.
+    if (!gps.test) { gps.pos = null; gpsF.reset(); }
+    if (gps.status !== 'denied') gps.status = 'off';
+    releaseWake();
   }
-  function onPos(p) {
-    if (gps.sim) return;
-    var np = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, ts: Date.now() };
-    var moved = !gps.pos || G.dist([gps.pos.lat, gps.pos.lon], [np.lat, np.lon]) > 1.5 || Math.abs(np.acc - gps.pos.acc) > 3;
-    gps.status = 'on'; gps.pos = np;
-    if (!state.ui.gpsAuto) { state.ui.gpsAuto = true; save(); }
-    if (moved || Date.now() - gps.lastRender > 5000) afterPosition();
+  function startWatchdog() {
+    if (gps.watchdog) return;
+    var lastQ = null;
+    gps.watchdog = setInterval(function () {
+      var q = gpsQ();
+      // Återhämtning: ingen godkänd position på 30 s → starta om prenumerationen.
+      if (!gps.test && gps.watchId !== null && Date.now() - Math.max(gps.lastFixAt, gps.lastRestart) > 30000) {
+        try { navigator.geolocation.clearWatch(gps.watchId); } catch (e) {}
+        startWatch();
+      }
+      if (q !== lastQ || q === 'lost') { lastQ = q; refreshGps(); }
+    }, 2000);
   }
-  function onPosErr(e) {
-    if (e.code === 1) { gpsStop(); gps.status = 'denied'; state.ui.gpsAuto = false; save(); }
-    else if (!gps.pos) gps.status = 'unavailable';
-    refreshGps();
+  function setTestMode(on) {
+    gpsStop(); gps.test = !!on; gps.simOffset = 0; gps.pos = null; gpsF.reset(); gps.suggest = null; gps.status = 'off'; gps.errSinceFix = false;
+    if (!on && state.ui.gpsAuto) gpsStart();
   }
+
+  // Skärmen tänd under ronden (där webbläsaren stöder det). GPS i bakgrunden stöds inte för webbappar.
+  function wakeSupported() { return 'wakeLock' in navigator; }
+  function acquireWake() {
+    if (!state.ui.wakeLock || !wakeSupported() || wakeLock || document.hidden) return;
+    navigator.wakeLock.request('screen').then(function (l) { wakeLock = l; l.addEventListener('release', function () { wakeLock = null; }); }).catch(function () {});
+  }
+  function releaseWake() { if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; } }
 
   // Automatisk hålidentifiering: byter hål när spelaren står på nästa tee och föregående hål har ett resultat.
   function afterPosition() {
-    var r = activeRound(); if (!r || !gps.pos) return;
+    var r = activeRound(); if (!r || !gps.pos) { refreshGps(); return; }
     var c = courseById(r.courseId), g = c && c.geo; gps.suggest = null;
     if (g) {
       var me = posLL(), next = g.holes[String(r.current + 2)], cur = r.holes[r.current];
@@ -116,88 +174,159 @@
     }
     refreshGps();
   }
-  function refreshGps() {
-    var el = document.getElementById('gps-box'), r = activeRound();
-    if (el && r && view.tab === 'round' && view.holeMode === 'hole') { el.innerHTML = gpsInner(r); gps.lastRender = Date.now(); }
+
+  // ---------- Avstånd ----------
+  function userGreen(hole) { return hole.userGreen || {}; }
+  function greenMid(hole) {
+    var ug = userGreen(hole);
+    if (ug.mid) return { pt: ug.mid, exact: true };
+    if (hole.green) return { pt: G.centroid(hole.green), exact: true };
+    if (ug.front && ug.back) return { pt: [(ug.front[0] + ug.back[0]) / 2, (ug.front[1] + ug.back[1]) / 2], exact: false };
+    return { pt: hole.line[hole.line.length - 1], exact: false };
+  }
+  function greenCenter(hole) { return greenMid(hole).pt; }
+  function greenInfo(hole, from) {
+    var ug = userGreen(hole), gm = greenMid(hole), poly = hole.green ? G.greenDistances(from, hole.green, gm.pt) : null;
+    return {
+      front: ug.front ? G.dist(from, ug.front) : poly ? poly.front : null,
+      mid: G.dist(from, gm.pt), back: ug.back ? G.dist(from, ug.back) : poly ? poly.back : null,
+      exact: gm.exact, inside: poly ? poly.inside : false, center: gm.pt,
+      frontPt: ug.front || (poly && poly.frontPt), backPt: ug.back || (poly && poly.backPt),
+      user: !!(ug.front || ug.mid || ug.back), missingEdges: !ug.front && !ug.back && !hole.green
+    };
+  }
+  function holeCtx(r) {
+    var c = courseById(r.courseId), g = c && c.geo, hole = g && g.holes[String(r.current + 1)];
+    if (!hole) return { c: c, g: g, hole: null };
+    var gc = greenCenter(hole), me = posLL();
+    var fromTee = !me || G.dist(me, gc) > 800;
+    return { c: c, g: g, hole: hole, gc: gc, me: me, fromTee: fromTee, from: fromTee ? teePoint(hole) : me };
   }
 
-  function gpsStatusHtml(g) {
-    if (gps.sim) return '<span class="gps-st sim">' + esc(t('simHint')) + '</span>';
-    if (gps.status === 'on' && gps.pos) {
-      var weak = gps.pos.acc > 20;
-      return '<span class="gps-st' + (weak ? ' weak' : '') + '"><i class="dot"></i>GPS ±' + Math.round(gps.pos.acc) + ' m' + (weak ? ' · ' + esc(t('gpsWeak')) : '') + '</span>';
-    }
-    if (gps.status === 'asking') return '<span class="gps-st"><i class="dot wait"></i>' + esc(t('gpsSearching')) + '</span>';
-    if (gps.status === 'denied') return '<span class="gps-st bad">' + esc(t('gpsDenied')) + '</span>';
-    if (gps.status === 'unavailable') return '<span class="gps-st bad">' + esc(t('gpsUnavailable')) + '</span> <button class="chip" data-act="gps-start">' + esc(t('retry')) + '</button>';
-    return '<button class="btn gold gps-go" data-act="gps-start">' + esc(t('gpsStart')) + '</button><p class="note">' + esc(t('gpsWhy')) + '</p>';
+  // ---------- Status ----------
+  function gpsStatusHtml() {
+    var st = gpsState(), acc = gps.pos ? Math.round(gps.pos.acc) : null, h = '';
+    if (gps.test) h += '<span class="gps-st test"><i class="dot test"></i>' + esc(t('gpsTestBadge')) + (st === 'lost' ? ' · ' + esc(fmt(t('gpsLost'), { s: fixAge() })) : gps.pos ? ' · ±' + acc + ' m' : '') + '</span>';
+    else if (st === 'good') h += '<span class="gps-st"><i class="dot"></i>' + esc(t('gpsActive')) + ' · ±' + acc + ' m' + (fixAge() > 15 ? ' · ' + esc(fmt(t('gpsAge'), { s: fixAge() })) : '') + '</span>';
+    else if (st === 'weak') h += '<span class="gps-st weak"><i class="dot weak"></i>' + esc(t('gpsLow')) + ' · ±' + acc + ' m</span>';
+    else if (st === 'lost') h += '<span class="gps-st bad"><i class="dot bad"></i>' + esc(fmt(t('gpsLost'), { s: Math.round((gpsNow() - gps.pos.ts) / 1000) })) + '</span>';
+    else if (st === 'searching') h += '<span class="gps-st"><i class="dot wait"></i>' + esc(t('gpsSearching')) + '</span>';
+    else if (st === 'denied') h += '<span class="gps-st bad">' + esc(t('gpsNoPermission')) + '</span><p class="note">' + esc(t('gpsDenied')) + '</p>';
+    else if (st === 'unavailable') h += '<span class="gps-st bad">' + esc(t('gpsUnavailable')) + '</span> <button class="chip" data-act="gps-start">' + esc(t('retry')) + '</button>';
+    else if (st === 'off') h += '<button class="btn gold gps-go" data-act="gps-start">' + esc(t('gpsStart')) + '</button><p class="note">' + esc(t('gpsWhy')) + '</p>';
+    return h;
   }
 
   function d3(key, v, approx, big) {
     return '<div class="' + (big ? 'mid' : '') + '"><small>' + esc(t(key)) + (approx ? ' ≈' : '') + '</small><b>' + (v === null || v === undefined ? '–' : Math.round(v)) + '</b></div>';
   }
-
-  function gpsInner(r) {
-    var c = courseById(r.courseId), g = c && c.geo, h = '';
-    if (!g) return '<p class="note">' + esc(t('noGeo')) + '</p>';
-    var hole = g.holes[String(r.current + 1)];
-    h += '<div class="gps-top">' + gpsStatusHtml(g) + (g.source === 'demo' ? '<em class="tag demo">' + esc(t('demoGeo')) + '</em>' : '<em class="tag">' + esc(t('osmUnverified')) + '</em>') + '</div>';
-    if (gps.suggest !== null && gps.suggest !== r.current) h += '<button class="suggest" data-act="go:' + gps.suggest + '">' + esc(t('seemsOnHole')) + ' ' + (gps.suggest + 1) + ' – ' + esc(t('switch')) + '</button>';
-    if (!hole) return h + '<p class="warn">' + esc(t('holeNoCoords').replace('{n}', r.current + 1)) + '</p>';
-
-    var gc = greenCenter(hole), me = posLL();
-    var fromTee = !me || G.dist(me, gc) > 800;
-    var from = fromTee ? teePoint(hole) : me;
-    var gd = G.greenDistances(from, hole.green, gc);
-    h += '<div class="dist3">' + d3('front', gd.front) + d3('mid', gd.mid, !gd.exact, true) + d3('back', gd.back) + '</div>';
-    if (fromTee) h += '<p class="note center">' + esc(t('fromTee')) + '</p>';
-    if ((state.bag || []).length && gd.mid > 30) {
-      var sug = ST.suggestClub(state.bag, learnedClubs(), gd.mid);
+  function liveHtml(r, x) {
+    var h = '', hole = x.hole, gi = greenInfo(hole, x.from), q = gpsQ(), stale = !x.fromTee && q === 'lost';
+    h += '<div class="dist3' + (stale ? ' stale' : '') + '">' + d3('frontEdge', gi.front) + d3('midGreen', gi.mid, !gi.exact, true) + d3('backEdge', gi.back) + '</div>';
+    if (stale) h += '<p class="warn">' + esc(t('distStale')) + '</p>';
+    else if (!x.fromTee && q === 'weak') h += '<p class="note center">' + esc(fmt(t('distWeak'), { a: Math.round(gps.pos.acc) })) + '</p>';
+    if (x.fromTee) h += '<p class="note center">' + esc(gps.pos ? t('fromTeeFar') : t('fromTee')) + '</p>';
+    if (gi.user) h += '<p class="note center">' + esc(t('greenUserPts')) + '</p>';
+    if (!gi.exact) h += '<p class="note center">' + esc(t('greenApprox')) + '</p>';
+    if (gi.missingEdges) h += '<div class="regprompt"><p>' + esc(t('edgesMissing')) + '</p><button class="chip" data-act="greg-open">' + esc(t('regGreen')) + '</button></div>';
+    if ((state.bag || []).length && gi.mid > 30 && !stale) {
+      var sug = ST.suggestClub(state.bag, learnedClubs(), gi.mid);
       if (sug) h += '<p class="clubsug">' + esc(t('clubSug')) + ': <b>' + esc(sug.name) + '</b> (' + sug.len + ' m' + (sug.learned ? ', ' + esc(t('learnedShort')) : '') + ') ' + tagEst() + '</p>';
     }
-    if (!gd.exact) h += '<p class="note center">' + esc(t('greenApprox')) + '</p>';
-
     if (gps.target) {
-      h += '<div class="target-row"><span>' + esc(t('target')) + ' <b>' + Math.round(G.dist(from, gps.target)) + ' m</b> · ' + esc(t('toGreen')) + ' <b>' + Math.round(G.dist(gps.target, gc)) + ' m</b></span><button class="chip" data-act="clear-target">' + esc(t('clearTarget')) + '</button></div>';
+      h += '<div class="target-row"><span>' + esc(t('target')) + ' <b>' + Math.round(G.dist(x.from, gps.target)) + ' m</b> · ' + esc(t('toGreen')) + ' <b>' + Math.round(G.dist(gps.target, gi.center)) + ' m</b></span><button class="chip" data-act="clear-target">' + esc(t('clearTarget')) + '</button></div>';
     }
-
-    // Vind relativt spelriktningen (från prognosen)
+    var c = x.c;
     if (c.lat !== null && c.lat !== undefined) {
       var wc = state.weatherCache[wKey(c.lat, c.lon)];
       if (wc && Date.now() - new Date(wc.fetchedAt).getTime() < 3 * 3600 * 1000 && wc.d.current) {
-        var wr = G.windRelative(wc.d.current.wind_direction_10m, G.bearing(from, gc));
+        var wr = G.windRelative(wc.d.current.wind_direction_10m, G.bearing(x.from, gi.center));
         h += '<p class="windrel"><svg viewBox="0 0 24 24" class="arrow sm" style="transform:rotate(' + (180 - wr.rel) + 'deg)" aria-hidden="true"><path d="M12 3l5 9h-3.5v9h-3v-9H7z"/></svg>' +
           esc(t('wind_' + wr.type)) + ' ' + dec(wc.d.current.wind_speed_10m, 0) + ' m/s <small>(' + esc(t('forecast')) + ')</small></p>';
       }
     }
-
-    // Hinder och doglegs framför spelaren
-    var hz = G.hazardsAhead(from, gc, hole.hazards).slice(0, 6), dl = G.doglegs(from, hole.line);
+    var hz = G.hazardsAhead(x.from, gi.center, hole.hazards).slice(0, 6), dl = G.doglegs(x.from, hole.line);
     if (hz.length || dl.length) {
-      h += '<ul class="hazards">';
+      h += '<ul class="hazards' + (stale ? ' stale' : '') + '">';
       dl.slice(0, 1).forEach(function (d) {
         h += '<li><span class="hz dogleg"></span><span class="hz-name">' + esc(t('dogleg')) + ' ' + esc(t('side_' + d.dir)) + '</span><span class="hz-n"><b>' + Math.round(d.distance) + '</b><small>' + esc(t('toCorner')) + '</small></span></li>';
       });
-      hz.forEach(function (x) {
-        h += '<li><span class="hz ' + x.kind + '"></span><span class="hz-name">' + esc(t(x.kind === 'water' ? 'hzWater' : 'hzBunker')) + ' ' + esc(x.nearGreen && x.side !== 'center' ? t('nearGreen') + ' ' + t('side_' + x.side) : t('side_' + x.side)) + '</span>' +
-          '<span class="hz-n"><b>' + Math.round(x.reach) + '</b><small>' + esc(t('reach')) + '</small></span><span class="hz-n"><b>' + Math.round(x.carry) + '</b><small>' + esc(t('carry')) + '</small></span></li>';
+      hz.forEach(function (z) {
+        h += '<li><span class="hz ' + z.kind + '"></span><span class="hz-name">' + esc(t(z.kind === 'water' ? 'hzWater' : 'hzBunker')) + ' ' + esc(z.nearGreen && z.side !== 'center' ? t('nearGreen') + ' ' + t('side_' + z.side) : t('side_' + z.side)) + '</span>' +
+          '<span class="hz-n"><b>' + Math.round(z.reach) + '</b><small>' + esc(t('reach')) + '</small></span><span class="hz-n"><b>' + Math.round(z.carry) + '</b><small>' + esc(t('carry')) + '</small></span></li>';
       });
       h += '</ul>';
     }
-
-    // Karta
-    h += '<div class="maptools"><button class="chip" data-act="map-toggle">' + esc(state.ui.mapOpen ? t('hideMap') : t('showMap')) + '</button>';
-    if (state.ui.mapOpen) {
-      h += '<button class="chip' + ((view.mapZoom || 'hole') === 'hole' ? ' on' : '') + '" data-act="zoom:hole">' + esc(t('zoomHole')) + '</button>' +
-        '<button class="chip' + (view.mapZoom === 'green' ? ' on' : '') + '" data-act="zoom:green">' + esc(t('zoomGreen')) + '</button>';
-      if (g.source === 'demo') h += '<button class="chip' + (gps.sim ? ' on' : '') + '" data-act="sim">' + esc(t('simOn')) + '</button>';
-    }
-    h += '</div>';
-    if (state.ui.mapOpen) h += mapSvg(hole, from, fromTee, gc) + '<p class="note">' + esc(gps.sim ? t('simHint') : t('tapHint')) + '</p>';
     return h;
   }
 
-  function mapSvg(hole, from, fromTee, gc) {
+  function testPanel() {
+    return '<div class="testbar" role="note">' + esc(t('simBanner')) + '</div><div class="testpad">' +
+      '<button class="chip" data-act="tmove:20:0">↑ ' + esc(t('fwd20')) + '</button><button class="chip" data-act="tmove:-20:0">↓ ' + esc(t('back20')) + '</button>' +
+      '<button class="chip" data-act="tmove:0:-20">← ' + esc(t('left20')) + '</button><button class="chip" data-act="tmove:0:20">→ ' + esc(t('right20')) + '</button>' +
+      '<button class="chip" data-act="tnoise">' + esc(t('standStill')) + '</button><button class="chip" data-act="tlose">' + esc(t('loseSignal')) + '</button>' +
+      '<button class="chip" data-act="ttee">' + esc(t('placeTee')) + '</button><button class="chip" data-act="test-off">' + esc(t('testOff')) + '</button></div>' +
+      '<p class="note">' + esc(t('simTap')) + '</p>';
+  }
+  function gregPanel(x) {
+    var ug = userGreen(x.hole), acc = gps.pos ? Math.round(gps.pos.acc) : null, okPos = gps.pos && gpsQ() === 'good' && gps.pos.acc <= 10;
+    var h = '<div class="greg"><h4>' + esc(fmt(t('regTitle'), { n: r0hole() })) + '</h4><p class="note">' + esc(t('regHelp')) + '</p>';
+    ['front', 'mid', 'back'].forEach(function (k) {
+      h += '<div class="gregrow"><span><b>' + esc(t('reg_' + k)) + '</b><small>' + esc(ug[k] ? t('regSaved') : t('regMissing')) + '</small></span>' +
+        '<button class="chip" data-act="greg-pos:' + k + '"' + (okPos ? '' : ' disabled') + '>' + esc(t('regHere')) + (acc !== null ? ' ±' + acc + ' m' : '') + '</button>' +
+        '<button class="chip' + (view.gregTap === k ? ' on' : '') + '" data-act="greg-tap:' + k + '">' + esc(t('regOnMap')) + '</button>' +
+        (ug[k] ? '<button class="chip" data-act="greg-del:' + k + '" aria-label="' + esc(t('delete')) + '">✕</button>' : '') + '</div>';
+    });
+    if (!okPos) h += '<p class="note">' + esc(t('regNeedAcc')) + '</p>';
+    return h + '<button class="btn ghost wide" data-act="greg-close">' + esc(t('close')) + '</button></div>';
+  }
+  function r0hole() { var r = activeRound(); return r ? r.current + 1 : ''; }
+
+  function gpsInner(r) {
+    var x = holeCtx(r), h = '';
+    if (!x.g) return '<p class="note">' + esc(t('noGeo')) + '</p>' + (gps.test ? testPanel() : '');
+    h += '<div class="gps-top"><span id="gps-status">' + gpsStatusHtml() + '</span>' + (x.g.source === 'demo' ? '<em class="tag demo">' + esc(t('demoGeo')) + '</em>' : '<em class="tag">' + esc(t('osmUnverified')) + '</em>') + '</div>';
+    if (gps.test) h += testPanel();
+    if (gps.suggest !== null && gps.suggest !== r.current) h += '<button class="suggest" data-act="go:' + gps.suggest + '">' + esc(t('seemsOnHole')) + ' ' + (gps.suggest + 1) + ' – ' + esc(t('switch')) + '</button>';
+    if (!x.hole) return h + '<p class="warn">' + esc(t('holeNoCoords').replace('{n}', r.current + 1)) + '</p>';
+    h += '<div id="gps-live">' + liveHtml(r, x) + '</div>';
+    if (view.gregOpen) h += gregPanel(x);
+    h += '<div class="maptools"><button class="chip" data-act="map-toggle">' + esc(state.ui.mapOpen ? t('hideMap') : t('showMap')) + '</button>';
+    if (state.ui.mapOpen) {
+      var canFollow = !!gps.pos && !x.fromTee;
+      h += '<button class="chip' + (gps.mv.follow ? ' on' : '') + '" data-act="map-follow"' + (canFollow ? '' : ' disabled') + '>' + esc(t('followMe')) + '</button>' +
+        '<button class="chip" data-act="map-center"' + (canFollow ? '' : ' disabled') + '>' + esc(t('centerMe')) + '</button>' +
+        '<button class="chip' + (!gps.mv.follow && (view.mapZoom || 'hole') === 'hole' ? ' on' : '') + '" data-act="zoom:hole">' + esc(t('zoomHole')) + '</button>' +
+        '<button class="chip' + (!gps.mv.follow && view.mapZoom === 'green' ? ' on' : '') + '" data-act="zoom:green">' + esc(t('zoomGreen')) + '</button>';
+      if (wakeSupported()) h += '<button class="chip' + (state.ui.wakeLock ? ' on' : '') + '" data-act="wake">' + esc(t('keepAwake')) + '</button>';
+      if (x.g.source === 'demo' && !gps.test) h += '<button class="chip" data-act="test-on">' + esc(t('simOn')) + '</button>';
+    }
+    h += '</div>';
+    if (state.ui.mapOpen) h += '<div id="gps-map">' + mapSvg(x.hole, x.gc) + '</div><p class="note">' + esc(view.gregTap ? t('regTapHint') : gps.test ? t('simTap') : t('tapHint')) + '</p>';
+    return h;
+  }
+
+  // Delvis uppdatering vid ny position: status, avstånd och kartmarkörer – kartan ritas inte om.
+  function refreshGps(full) {
+    var el = document.getElementById('gps-box'), r = activeRound();
+    if (!el || !r || view.tab !== 'round' || view.holeMode !== 'hole') return;
+    var x = holeCtx(r), key = boxKeyFor(r, x);
+    if (full || key !== gps.boxKey || !document.getElementById('gps-live')) {
+      el.innerHTML = gpsInner(r); gps.boxKey = key; gps.lastRender = Date.now();
+      updateMapDynamic(false); return;
+    }
+    var st = document.getElementById('gps-status'); if (st) st.innerHTML = gpsStatusHtml();
+    var lv = document.getElementById('gps-live'); if (lv && x.hole) lv.innerHTML = liveHtml(r, x);
+    updateMapDynamic(true);
+    gps.lastRender = Date.now();
+  }
+
+  function boxKeyFor(r, x) {
+    x = x || holeCtx(r);
+    return r.id + ':' + r.current + ':' + (view.mapZoom || 'hole') + ':' + state.ui.mapOpen + ':' + !!x.fromTee + ':' + !!view.gregOpen + ':' + view.gregTap + ':' + gps.test + ':' + (gps.suggest === null ? '' : gps.suggest) + ':' + gpsState().replace(/good|weak|lost/, 'on') + ':' + state.ui.wakeLock + ':' + gps.mv.follow + ':' + !!gps.pos;
+  }
+  // ---------- Karta ----------
+  function mapSvg(hole, gc) {
     var W = 360, H = 470, pad = 26, P = G.proj(gc), mode = view.mapZoom || 'hole', pts = [];
     function add(poly) { poly.forEach(function (p) { pts.push(P.xy(p)); }); }
     var tee = teePoint(hole), cxy = P.xy(gc);
@@ -207,10 +336,8 @@
     } else {
       add(hole.line); if (hole.green) add(hole.green);
       hole.hazards.forEach(function (z) { add(z.poly); }); (hole.tees || []).forEach(add);
-      if (!fromTee) pts.push(P.xy(from));
-      if (gps.target) pts.push(P.xy(gps.target));
     }
-    var base = P.xy(mode === 'green' ? from : tee), dv = [cxy[0] - base[0], cxy[1] - base[1]], dl = Math.sqrt(dv[0] * dv[0] + dv[1] * dv[1]);
+    var base = P.xy(tee), dv = [cxy[0] - base[0], cxy[1] - base[1]], dl = Math.sqrt(dv[0] * dv[0] + dv[1] * dv[1]);
     if (dl < 1) { base = P.xy(hole.line[0]); dv = [cxy[0] - base[0], cxy[1] - base[1]]; dl = Math.sqrt(dv[0] * dv[0] + dv[1] * dv[1]) || 1; }
     var u = [dv[0] / dl, dv[1] / dl];
     function rot(q) { return [q[0] * u[1] - q[1] * u[0], q[0] * u[0] + q[1] * u[1]]; }
@@ -220,22 +347,23 @@
     var ox = W / 2 - s * (minX + maxX) / 2, oy = H / 2 + s * (minY + maxY) / 2;
     function toSvg(ll) { var r = rot(P.xy(ll)); return [s * r[0] + ox, -s * r[1] + oy]; }
     function fromSvg(sp) { var r0 = (sp[0] - ox) / s, r1 = -(sp[1] - oy) / s; return P.ll([u[1] * r0 + u[0] * r1, -u[0] * r0 + u[1] * r1]); }
-    mapCtx = { toSvg: toSvg, fromSvg: fromSvg };
+    mapCtx = { toSvg: toSvg, fromSvg: fromSvg, W: W, H: H, s: s, hole: hole, gc: gc, gcSvg: toSvg(gc) };
+    var mvKey = hole.ref + ':' + mode;
+    if (gps.mv.key !== mvKey) { gps.mv.key = mvKey; if (!gps.mv.follow) { gps.mv.k = 1; gps.mv.tx = 0; gps.mv.ty = 0; } }
     function path(poly) { return 'M' + poly.map(function (p) { var q = toSvg(p); return q[0].toFixed(1) + ' ' + q[1].toFixed(1); }).join('L') + 'Z'; }
     function line(a, b, cls) { var p = toSvg(a), q = toSvg(b); return '<line x1="' + p[0].toFixed(1) + '" y1="' + p[1].toFixed(1) + '" x2="' + q[0].toFixed(1) + '" y2="' + q[1].toFixed(1) + '" class="' + cls + '"/>'; }
-    function chip(a, b, txt) {
-      var p = toSvg(a), q = toSvg(b), x = (p[0] + q[0]) / 2, y = (p[1] + q[1]) / 2, w = 12 + txt.length * 9;
-      return '<g class="mchip"><rect x="' + (x - w / 2).toFixed(1) + '" y="' + (y - 13).toFixed(1) + '" width="' + w + '" height="26" rx="13"/><text x="' + x.toFixed(1) + '" y="' + (y + 6).toFixed(1) + '">' + esc(txt) + '</text></g>';
-    }
-    var sat = state.ui.sat && !satFailed && navigator.onLine !== false, out = '<svg class="holemap' + (sat ? ' sat' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(t('hole')) + ' ' + hole.ref + '"><rect width="' + W + '" height="' + H + '" class="m-bg"/>';
+    var sat = state.ui.sat && !satFailed && navigator.onLine !== false;
+    var out = '<svg class="holemap' + (sat ? ' sat' : '') + (gps.test ? ' testmode' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(t('hole')) + ' ' + hole.ref + '"><rect width="' + W + '" height="' + H + '" class="m-bg"/>';
+    out += '<g id="m-view" style="transform-origin:0 0;transform:translate(' + gps.mv.tx + 'px,' + gps.mv.ty + 'px) scale(' + gps.mv.k + ')">';
     if (sat) {
-      var corners = [[0, 0], [W, 0], [0, H], [W, H]].map(fromSvg);
+      // Plattor täcker ett större område än hålet så att kartan kan följa och panoreras.
+      var corners = [[-W, -H], [2 * W, -H], [-W, 2 * H], [2 * W, 2 * H]].map(fromSvg);
       var lats = corners.map(function (q) { return q[0]; }), lons = corners.map(function (q) { return q[1]; });
       var z = Math.max(14, Math.min(19, Math.round(Math.log(156543.03 * Math.cos(gc[0] * Math.PI / 180) * s * 2) / Math.LN2))), x0, x1, y0, y1;
       for (; z >= 14; z--) {
         x0 = Math.floor(G.lon2tile(Math.min.apply(null, lons), z)); x1 = Math.floor(G.lon2tile(Math.max.apply(null, lons), z));
         y0 = Math.floor(G.lat2tile(Math.max.apply(null, lats), z)); y1 = Math.floor(G.lat2tile(Math.min.apply(null, lats), z));
-        if ((x1 - x0 + 1) * (y1 - y0 + 1) <= 36) break;
+        if ((x1 - x0 + 1) * (y1 - y0 + 1) <= 64) break;
       }
       for (var tx = x0; tx <= x1; tx++) for (var ty = y0; ty <= y1; ty++) {
         var nw = toSvg([G.tile2lat(ty, z), G.tile2lon(tx, z)]), ne = toSvg([G.tile2lat(ty, z), G.tile2lon(tx + 1, z)]), sw = toSvg([G.tile2lat(ty + 1, z), G.tile2lon(tx, z)]);
@@ -248,22 +376,138 @@
     hole.hazards.forEach(function (z2) { out += '<path d="' + path(z2.poly) + '" class="m-' + z2.kind + '"/>'; });
     if (hole.green) out += '<path d="' + path(hole.green) + '" class="m-green"/>';
     for (var i = 0; i < hole.line.length - 1; i++) out += line(hole.line[i], hole.line[i + 1], 'm-cl');
+    var ug = userGreen(hole);
+    ['front', 'mid', 'back'].forEach(function (k) {
+      if (!ug[k]) return; var q = toSvg(ug[k]);
+      out += '<g class="m-up" transform="translate(' + q[0].toFixed(1) + ' ' + q[1].toFixed(1) + ')"><circle r="7"/><text y="4">' + esc(t('regAbbr_' + k)) + '</text></g>';
+    });
     var fp = toSvg(gc);
     out += '<g class="m-flag" transform="translate(' + fp[0].toFixed(1) + ' ' + fp[1].toFixed(1) + ')"><path d="M0 0V-22"/><path d="M0-22L12-17 0-12Z"/><circle r="2.5"/></g>';
-    var op = toSvg(from);
-    if (gps.target) {
-      out += line(from, gps.target, 'm-shot') + line(gps.target, gc, 'm-shot');
-      if (mode === 'hole' || G.dist(from, gc) < 120) out += chip(from, gps.target, Math.round(G.dist(from, gps.target)) + ' m');
-      out += chip(gps.target, gc, Math.round(G.dist(gps.target, gc)) + ' m');
-      var tp = toSvg(gps.target);
-      out += '<g class="m-target" transform="translate(' + tp[0].toFixed(1) + ' ' + tp[1].toFixed(1) + ')"><circle r="10"/><path d="M-15 0H15M0-15V15"/></g>';
-    } else if (op[1] > 0 && op[1] < H) out += line(from, gc, 'm-shot faint');
-    if (!fromTee && op[0] > -20 && op[0] < W + 20 && op[1] > -20 && op[1] < H + 20) {
-      var acc = gps.pos && !gps.sim ? Math.max(4, gps.pos.acc * s) : 0;
-      out += '<g transform="translate(' + op[0].toFixed(1) + ' ' + op[1].toFixed(1) + ')">' + (acc ? '<circle r="' + acc.toFixed(1) + '" class="m-acc"/>' : '') + '<circle r="8" class="m-me"/></g>';
-    }
-    out += '<text x="' + (W - 6) + '" y="' + (H - 7) + '" class="m-attr">© OpenStreetMap' + (sat ? ' · Esri, Maxar' : '') + '</text></svg>';
+    // Dynamiska element (uppdateras vid varje position utan att kartan ritas om)
+    out += '<line id="m-l1" class="m-shot" style="display:none"/><line id="m-l2" class="m-shot" style="display:none"/>' +
+      '<g id="m-c1" class="mchip" style="display:none"><rect height="26" rx="13"/><text></text></g><g id="m-c2" class="mchip" style="display:none"><rect height="26" rx="13"/><text></text></g>' +
+      '<g id="m-tgt" class="m-target" style="display:none"><circle r="10"/><path d="M-15 0H15M0-15V15"/></g>' +
+      '<circle id="m-acc" class="m-acc" style="display:none"/><circle id="m-me" class="m-me' + (gps.test ? ' sim' : '') + '" r="8" style="display:none"/>';
+    out += '</g><text x="' + (W - 6) + '" y="' + (H - 7) + '" class="m-attr">© OpenStreetMap' + (sat ? ' · Esri, Maxar' : '') + '</text>' +
+      (gps.test ? '<text x="8" y="20" class="m-simlbl">' + esc(t('gpsTestBadge')) + '</text>' : '') + '</svg>';
     return out;
+  }
+  function setAttrs(el, a) { Object.keys(a).forEach(function (k) { el.setAttribute(k, a[k]); }); }
+  function show(el, on) { if (el) el.style.display = on ? '' : 'none'; }
+  function followTransform(me) {
+    var P = mapCtx.toSvg(me), G0 = mapCtx.gcSvg, d = Math.sqrt(Math.pow(P[0] - G0[0], 2) + Math.pow(P[1] - G0[1], 2));
+    var k = Math.max(1, Math.min(5, (mapCtx.H * 0.5) / Math.max(1, d)));
+    return { k: k, tx: mapCtx.W / 2 - k * P[0], ty: mapCtx.H * 0.8 - k * P[1] };
+  }
+  function applyMapTransform(anim) {
+    var g = document.getElementById('m-view'); if (!g) return;
+    g.style.transition = anim ? 'transform .7s ease-out' : 'none';
+    g.style.transform = 'translate(' + gps.mv.tx.toFixed(1) + 'px,' + gps.mv.ty.toFixed(1) + 'px) scale(' + gps.mv.k.toFixed(3) + ')';
+  }
+  function updateMapDynamic(anim) {
+    if (!mapCtx || !document.getElementById('m-view')) return;
+    var r = activeRound(); if (!r) return;
+    var x = holeCtx(r); if (!x.hole) return;
+    var k = gps.mv.k, inv = 1 / k, from = x.from, gc = greenInfo(x.hole, from).center, tgt = gps.target || gc;
+    var me = document.getElementById('m-me'), acc = document.getElementById('m-acc');
+    var showMe = !!gps.pos && !x.fromTee;
+    if (showMe) {
+      var P = mapCtx.toSvg(x.me);
+      setAttrs(me, { cx: P[0].toFixed(1), cy: P[1].toFixed(1), r: (8 * inv).toFixed(2), 'stroke-width': (3 * inv).toFixed(2) });
+      setAttrs(acc, { cx: P[0].toFixed(1), cy: P[1].toFixed(1), r: Math.max(4 * inv, gps.pos.acc * mapCtx.s).toFixed(1) });
+      me.classList.toggle('stale', gpsQ() === 'lost');
+    }
+    show(me, showMe); show(acc, showMe);
+    var a = mapCtx.toSvg(from), b = mapCtx.toSvg(tgt), c2 = mapCtx.toSvg(gc), l1 = document.getElementById('m-l1'), l2 = document.getElementById('m-l2');
+    setAttrs(l1, { x1: a[0].toFixed(1), y1: a[1].toFixed(1), x2: b[0].toFixed(1), y2: b[1].toFixed(1), 'stroke-width': (2.5 * inv).toFixed(2) });
+    show(l1, true);
+    var hasT = !!gps.target;
+    if (hasT) setAttrs(l2, { x1: b[0].toFixed(1), y1: b[1].toFixed(1), x2: c2[0].toFixed(1), y2: c2[1].toFixed(1), 'stroke-width': (2.5 * inv).toFixed(2) });
+    show(l2, hasT);
+    var tg = document.getElementById('m-tgt');
+    if (hasT) tg.setAttribute('transform', 'translate(' + b[0].toFixed(1) + ' ' + b[1].toFixed(1) + ') scale(' + inv.toFixed(3) + ')');
+    show(tg, hasT);
+    function chip(id, p1, p2, txt) {
+      var el = document.getElementById(id); if (!el) return;
+      var w = 12 + txt.length * 9, cx = (p1[0] + p2[0]) / 2, cy = (p1[1] + p2[1]) / 2;
+      el.setAttribute('transform', 'translate(' + cx.toFixed(1) + ' ' + cy.toFixed(1) + ') scale(' + inv.toFixed(3) + ')');
+      setAttrs(el.querySelector('rect'), { x: -w / 2, y: -13, width: w });
+      setAttrs(el.querySelector('text'), { x: 0, y: 6 }); el.querySelector('text').textContent = txt;
+      show(el, true);
+    }
+    chip('m-c1', a, b, Math.round(G.dist(from, tgt)) + ' m');
+    if (hasT) chip('m-c2', b, c2, Math.round(G.dist(tgt, gc)) + ' m'); else show(document.getElementById('m-c2'), false);
+    if (gps.mv.follow && showMe) { var ft = followTransform(x.me); gps.mv.k = ft.k; gps.mv.tx = ft.tx; gps.mv.ty = ft.ty; applyMapTransform(anim); }
+  }
+
+  // Panorering, nypzoom och tryck på kartan.
+  var mapPtr = { pts: {}, start: null, moved: false };
+  function svgUnits(svg) { var rc = svg.getBoundingClientRect(); return mapCtx ? mapCtx.W / rc.width : 1; }
+  function onMapDown(e) {
+    var svg = e.target.closest && e.target.closest('svg.holemap'); if (!svg || !mapCtx) return;
+    try { svg.setPointerCapture(e.pointerId); } catch (er) {}
+    mapPtr.pts[e.pointerId] = [e.clientX, e.clientY];
+    var ids = Object.keys(mapPtr.pts);
+    mapPtr.start = { k: gps.mv.k, tx: gps.mv.tx, ty: gps.mv.ty, pts: JSON.parse(JSON.stringify(mapPtr.pts)), svg: svg };
+    if (ids.length === 1) mapPtr.moved = false;
+  }
+  function onMapMove(e) {
+    if (!mapPtr.start || !mapPtr.pts[e.pointerId]) return;
+    mapPtr.pts[e.pointerId] = [e.clientX, e.clientY];
+    var st = mapPtr.start, f = svgUnits(st.svg), ids = Object.keys(mapPtr.pts);
+    if (ids.length >= 2 && Object.keys(st.pts).length >= 2) {
+      var a0 = st.pts[ids[0]], b0 = st.pts[ids[1]], a1 = mapPtr.pts[ids[0]], b1 = mapPtr.pts[ids[1]];
+      if (!a0 || !b0) return;
+      var d0 = Math.hypot(a0[0] - b0[0], a0[1] - b0[1]) || 1, d1 = Math.hypot(a1[0] - b1[0], a1[1] - b1[1]);
+      var k = Math.max(0.6, Math.min(8, st.k * d1 / d0));
+      var rc = st.svg.getBoundingClientRect(), mx = (((a0[0] + b0[0]) / 2) - rc.left) * f, my = (((a0[1] + b0[1]) / 2) - rc.top) * f;
+      var nx = (((a1[0] + b1[0]) / 2) - rc.left) * f, ny = (((a1[1] + b1[1]) / 2) - rc.top) * f;
+      var wx = (mx - st.tx) / st.k, wy = (my - st.ty) / st.k;
+      gps.mv.k = k; gps.mv.tx = nx - k * wx; gps.mv.ty = ny - k * wy;
+      mapPtr.moved = true;
+    } else {
+      var p0 = st.pts[e.pointerId]; if (!p0) return;
+      var dx = e.clientX - p0[0], dy = e.clientY - p0[1];
+      if (!mapPtr.moved && Math.hypot(dx, dy) < 7) return;
+      mapPtr.moved = true;
+      gps.mv.tx = st.tx + dx * f; gps.mv.ty = st.ty + dy * f;
+    }
+    if (gps.mv.follow) { gps.mv.follow = false; var fb = document.querySelector('[data-act="map-follow"]'); if (fb) fb.classList.remove('on'); }
+    applyMapTransform(false); updateMapDynamic(false);
+  }
+  function onMapUp(e) {
+    if (!mapPtr.start || !mapPtr.pts[e.pointerId]) return;
+    var svg = mapPtr.start.svg, wasMoved = mapPtr.moved, single = Object.keys(mapPtr.pts).length === 1;
+    delete mapPtr.pts[e.pointerId];
+    if (Object.keys(mapPtr.pts).length) { mapPtr.start = { k: gps.mv.k, tx: gps.mv.tx, ty: gps.mv.ty, pts: JSON.parse(JSON.stringify(mapPtr.pts)), svg: svg }; return; }
+    mapPtr.start = null;
+    if (wasMoved || !single || e.type === 'pointercancel') return;
+    var rc = svg.getBoundingClientRect(), f = mapCtx.W / rc.width;
+    var vx = (e.clientX - rc.left) * f, vy = (e.clientY - rc.top) * f;
+    var ll = mapCtx.fromSvg([(vx - gps.mv.tx) / gps.mv.k, (vy - gps.mv.ty) / gps.mv.k]);
+    mapTap(ll);
+  }
+  function mapTap(ll) {
+    var r = activeRound(); if (!r) return;
+    if (view.gregTap) { saveGreenPoint(view.gregTap, ll, 'map'); view.gregTap = null; refreshGps(true); return; }
+    if (gps.test) { gps.simOffset += 15000; ingest({ lat: ll[0], lon: ll[1], acc: 4, ts: gpsNow() }); return; }
+    gps.target = ll; refreshGps();
+  }
+  function saveGreenPoint(k, ll, src) {
+    var r = activeRound(), x = r && holeCtx(r); if (!x || !x.hole) return;
+    x.hole.userGreen = x.hole.userGreen || {};
+    x.hole.userGreen[k] = [Math.round(ll[0] * 1e7) / 1e7, Math.round(ll[1] * 1e7) / 1e7];
+    x.hole.userGreen.src = src; x.hole.userGreen.at = new Date().toISOString();
+    save(); view.flash = t('regDone');
+  }
+  // Testläge: förflyttning relativt hålets spelriktning.
+  function testMove(fwd, right) {
+    var r = activeRound(), x = r && holeCtx(r); if (!x || !x.hole) return;
+    var startP = gps.pos ? [gps.pos.lat, gps.pos.lon] : teePoint(x.hole);
+    var brg = G.bearing(teePoint(x.hole), greenCenter(x.hole));
+    var np = G.offsetPoint(startP, brg, fwd, right);
+    gps.simOffset += 15000;
+    ingest({ lat: np[0], lon: np[1], acc: 4, ts: gpsNow(), speed: 1.4 });
   }
 
   // ---------- Hämta banor från OpenStreetMap ----------
@@ -1017,7 +1261,7 @@
     bag.forEach(function (c) {
       var L = learned[c.id];
       h += '<div class="bagrow"><input data-field="bag.' + c.id + '.name" value="' + esc(c.name) + '" aria-label="' + esc(t('club')) + '">' +
-        (c.putter ? '<span class="muted">–</span>' : '<input data-field="bag.' + c.id + '.carry" inputmode="numeric" value="' + esc(c.carry || '') + '" placeholder="m" aria-label="' + esc(t('carry')) + '">') +
+        (c.putter ? '<span class="muted">–</span>' : '<input data-field="bag.' + c.id + '.carry" inputmode="numeric" value="' + esc(c.carry || '') + '" placeholder="m" aria-label="' + esc(t('clubLen')) + '">') +
         '<button class="chip" data-act="bag-del:' + c.id + '" aria-label="' + esc(t('remove')) + '">✕</button>' +
         (L ? '<small class="learn">' + esc(fmt(t('learned'), { a: L.median, n: L.n, lo: L.min, hi: L.max })) + '</small>' : '') + '</div>';
     });
@@ -2023,7 +2267,8 @@
       return '<button class="' + (p.theme === x ? 'on' : '') + '" data-act="theme:' + x + '">' + esc(t(x === 'auto' ? 'themeAuto' : x === 'light' ? 'themeLight' : 'themeDark')) + '</button>';
     }).join('') + '</div>';
     h += '<h3>' + esc(t('gpsData')) + '</h3><label class="check"><input type="checkbox" data-field="ui.gpsAuto"' + (state.ui.gpsAuto ? ' checked' : '') + '> <span>' + esc(t('gpsAutoLbl')) + '</span></label>' +
-      '<label class="check"><input type="checkbox" data-field="ui.sat"' + (state.ui.sat ? ' checked' : '') + '> <span>' + esc(t('satellite')) + '<small class="note block-note">' + esc(t('satHelp')) + '</small></span></label>';
+      '<label class="check"><input type="checkbox" data-field="ui.sat"' + (state.ui.sat ? ' checked' : '') + '> <span>' + esc(t('satellite')) + '<small class="note block-note">' + esc(t('satHelp')) + '</small></span></label>' +
+      '<p class="note">' + esc(t('testModeHelp')) + '</p><button class="btn ghost" data-act="' + (gps.test ? 'test-off' : 'test-on') + '">' + esc(gps.test ? t('testOff') : t('testModeStart')) + '</button>';
     if (profileReady() && !activeRound()) h += '<button class="btn gold big" data-act="setup">' + esc(t('startRound')) + '</button>';
 
     h += cloudSection();
@@ -2062,8 +2307,12 @@
     appEl.innerHTML = body + warn + flash() + (view.tab === 'play' ? '' : nav2());
     manageTimers();
     var inPlay = view.tab === 'round' && !view.sub && activeRound() && view.holeMode === 'hole';
-    if (inPlay) { gps.lastRender = Date.now(); if (state.ui.gpsAuto && gps.watchId === null && gps.status !== 'denied' && !gps.sim && !document.hidden) gpsStart(); }
-    else gpsStop();
+    if (inPlay) {
+      gps.lastRender = Date.now(); gps.boxKey = boxKeyFor(activeRound()); updateMapDynamic(false);
+      if (!document.hidden && gps.status !== 'denied' && (gps.test || state.ui.gpsAuto) && (gps.test ? !gps.watchdog : gps.watchId === null)) gpsStart();
+      acquireWake();
+    } else if (gps.watchId !== null || gps.watchdog) gpsStop();
+    else releaseWake();
     if (view.flash) { var f = view.flash; setTimeout(function () { if (view.flash === f) { view.flash = null; var el = appEl.querySelector('.flash'); if (el) el.remove(); } }, 1800); }
   }
 
@@ -2118,9 +2367,23 @@
       case 'go': if (r) { r.current = Math.max(0, Math.min(r.tee.holes.length - 1, +v)); gps.target = null; gps.suggest = null; gps.lastAuto = r.current; save(); window.scrollTo(0, 0); } break;
       case 'gps-start': state.ui.gpsAuto = true; save(); gpsStop(); gps.status = 'off'; gpsStart(); refreshGps(); return;
       case 'clear-target': gps.target = null; refreshGps(); return;
+      case 'map-follow': gps.mv.follow = !gps.mv.follow; refreshGps(true); updateMapDynamic(true); return;
+      case 'map-center': { var xc = r && holeCtx(r); if (xc && xc.me && !xc.fromTee) { var ft = followTransform(xc.me); gps.mv.k = ft.k; gps.mv.tx = ft.tx; gps.mv.ty = ft.ty; applyMapTransform(true); updateMapDynamic(false); } return; }
+      case 'wake': state.ui.wakeLock = !state.ui.wakeLock; save(); if (state.ui.wakeLock) acquireWake(); else releaseWake(); refreshGps(true); return;
+      case 'test-on': setTestMode(true); render(); return;
+      case 'test-off': setTestMode(false); render(); return;
+      case 'tmove': { var tm = v.split(':'); testMove(+tm[0], +tm[1]); return; }
+      case 'ttee': { var xt = r && holeCtx(r); if (xt && xt.hole) { gpsF.reset(); gps.simOffset += 1000; var tp = teePoint(xt.hole); ingest({ lat: tp[0], lon: tp[1], acc: 4, ts: gpsNow() }); } return; }
+      case 'tnoise': { if (!gps.pos) return; var base = [gps.pos.lat, gps.pos.lon]; for (var ni = 0; ni < 6; ni++) { gps.simOffset += 1000; var np2 = G.offsetPoint(base, Math.random() * 360, Math.random() * 2.5, 0); ingest({ lat: np2[0], lon: np2[1], acc: 5, ts: gpsNow(), speed: 0 }); } return; }
+      case 'tlose': gps.errSinceFix = true; gps.simOffset += 20000; refreshGps(); return;
+      case 'greg-open': view.gregOpen = true; refreshGps(true); return;
+      case 'greg-close': view.gregOpen = false; view.gregTap = null; refreshGps(true); return;
+      case 'greg-pos': if (gps.pos && gpsQ() === 'good' && gps.pos.acc <= 10) { saveGreenPoint(v, [gps.pos.lat, gps.pos.lon], gps.test ? 'test' : 'gps'); refreshGps(true); render(); } return;
+      case 'greg-tap': view.gregTap = view.gregTap === v ? null : v; refreshGps(true); return;
+      case 'greg-del': { var xd = r && holeCtx(r); if (xd && xd.hole && xd.hole.userGreen) { delete xd.hole.userGreen[v]; save(); refreshGps(true); } return; }
       case 'map-toggle': state.ui.mapOpen = !state.ui.mapOpen; save(); refreshGps(); return;
-      case 'zoom': view.mapZoom = v; refreshGps(); return;
-      case 'sim': gps.sim = !gps.sim; if (gps.sim) { gpsStop(); gps.pos = null; } else { gps.pos = null; gps.status = 'off'; } gps.suggest = null; render(); return;
+      case 'zoom': view.mapZoom = v; gps.mv.follow = false; gps.mv.key = null; refreshGps(true); return;
+      case 'sim': setTestMode(!gps.test); render(); return;
       case 'find': view.sub = 'find'; view.find = { status: 'idle', results: [], link: false }; window.scrollTo(0, 0); break;
       case 'link-geo': view.sub = 'dir'; view.dirLink = true; view.dirQ = view.draft.name || ''; view.find = { status: 'idle', results: [], link: true }; window.scrollTo(0, 0); break;
       case 'dir': view.sub = 'dir'; view.dirLink = false; view.find = { status: 'idle', results: [], link: false }; window.scrollTo(0, 0); break;
@@ -2297,10 +2560,10 @@
         var lists = r.mode === 'team' ? Object.keys(r.teamHoles).map(function (k) { return r.teamHoles[k]; }) : [r.holes].concat((r.extra || []).map(function (p) { return p.holes; }));
         var missing = 0; lists.forEach(function (l) { missing += l.filter(function (d) { return typeof d.strokes !== 'number' && !d.pickedUp; }).length; });
         if (!confirm(t('finishConfirm') + (missing ? '\n' + missing + ' ' + t('unplayed') : ''))) return;
-        r.status = 'done'; r.finishedAt = new Date().toISOString(); gps.target = null; gps.sim = false; save();
+        r.status = 'done'; r.finishedAt = new Date().toISOString(); gps.target = null; if (gps.test) setTestMode(false); save();
         view.tab = 'stats'; view.sub = 'round'; view.param = r.id; view.flash = t('saved'); window.scrollTo(0, 0); break;
       }
-      case 'discard': if (r && confirm(t('discardConfirm'))) { gps.target = null; gps.sim = false; state.rounds = state.rounds.filter(function (x) { return x !== r; }); save(); view.tab = 'home'; } else return; break;
+      case 'discard': if (r && confirm(t('discardConfirm'))) { gps.target = null; if (gps.test) setTestMode(false); state.rounds = state.rounds.filter(function (x) { return x !== r; }); save(); view.tab = 'home'; } else return; break;
       case 'round': view.tab = 'stats'; view.sub = 'round'; view.param = v; window.scrollTo(0, 0); break;
       case 'back-stats': view.sub = null; break;
       case 'delete-round': if (confirm(t('deleteRoundConfirm'))) { state.rounds = state.rounds.filter(function (x) { return x.id !== v; }); save(); view.sub = null; } else return; break;
@@ -2438,20 +2701,17 @@
     });
     window.addEventListener('pagehide', save);
     document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.getAttribute && e.target.getAttribute('data-field') === 'find.q') { view.find.q = e.target.value; searchCourses(view.find.q); } });
-    document.addEventListener('click', function (e) {
-      var svg = e.target.closest && e.target.closest('svg.holemap');
-      if (!svg || !mapCtx || !svg.getScreenCTM) return;
-      var pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
-      var loc = pt.matrixTransform(svg.getScreenCTM().inverse()), ll = mapCtx.fromSvg([loc.x, loc.y]);
-      if (gps.sim) { gps.pos = { lat: ll[0], lon: ll[1], acc: 3, ts: Date.now() }; gps.status = 'on'; afterPosition(); }
-      else { gps.target = ll; refreshGps(); }
-    });
+    document.addEventListener('pointerdown', onMapDown);
+    document.addEventListener('pointermove', onMapMove);
+    document.addEventListener('pointerup', onMapUp);
+    document.addEventListener('pointercancel', onMapUp);
     document.addEventListener('error', function (e) {
       var el = e.target;
       if (el && el.tagName === 'image' && el.closest && el.closest('svg.holemap') && !satFailed) { satFailed = true; refreshGps(); }
     }, true);
     window.addEventListener('online', function () { satFailed = false; });
-    document.addEventListener('visibilitychange', function () { if (document.hidden) gpsStop(); else render(); });
+    // Webbappar får ingen GPS i bakgrunden: spårningen stoppas när appen döljs och startar om när den visas.
+    document.addEventListener('visibilitychange', function () { if (document.hidden) { if (!gps.test) gpsStop(); releaseWake(); } else render(); });
     if (window.matchMedia) {
       var mq = window.matchMedia('(prefers-color-scheme: dark)');
       if (mq.addEventListener) mq.addEventListener('change', render);

@@ -301,7 +301,7 @@ Object.assign(window.I18N.sv, {
   m_points: 'Poäng', m_gross: 'Brutto', m_putts: 'Puttar', m_gir: 'GIR %', m_fir: 'FIR %', m_scr: 'Scrambling %', m_pen: 'Plikt', m_sg: 'SG totalt',
   avgShort: 'snitt', older: 'äldre', newer: 'nyare',
   myBag: 'Min golfbag', bagHelp: 'Ange ungefärlig längd per klubba. När du loggar slag med klubba lär sig appen dina riktiga längder (median av slag mot hålet – en uppskattning).',
-  club: 'Klubba', carry: 'Längd', addClub: 'Lägg till klubba', stdBag: 'Lägg till standarduppsättning', learned: 'Loggat: {a} m (n={n}, {lo}–{hi} m)'
+  club: 'Klubba', clubLen: 'Längd', addClub: 'Lägg till klubba', stdBag: 'Lägg till standarduppsättning', learned: 'Loggat: {a} m (n={n}, {lo}–{hi} m)'
 });
 Object.assign(window.I18N.en, {
   on: 'on', off: 'off', tagData: 'Data', tagEst: 'Estimate',
@@ -345,7 +345,7 @@ Object.assign(window.I18N.en, {
   m_points: 'Points', m_gross: 'Gross', m_putts: 'Putts', m_gir: 'GIR %', m_fir: 'FIR %', m_scr: 'Scrambling %', m_pen: 'Penalties', m_sg: 'SG total',
   avgShort: 'avg', older: 'older', newer: 'newer',
   myBag: 'My golf bag', bagHelp: 'Enter an approximate distance per club. When you log shots with a club, the app learns your real distances (median of shots towards the hole – an estimate).',
-  club: 'Club', carry: 'Distance', addClub: 'Add club', stdBag: 'Add standard set', learned: 'Logged: {a} m (n={n}, {lo}–{hi} m)'
+  club: 'Club', clubLen: 'Distance', addClub: 'Add club', stdBag: 'Add standard set', learned: 'Logged: {a} m (n={n}, {lo}–{hi} m)'
 });
 
 /* Etapp 5 – konto, molnsynk och livematcher */
@@ -450,4 +450,42 @@ Object.assign(window.I18N.en, {
   gameSettings: 'Game settings', courseAdded: 'Course added', completeCard: 'Complete par and index from the scorecard and tap Save.',
   dirNeeded: 'The course register is needed to search all Swedish courses.', change: 'Change',
   matchNeedsPlayers: 'Add at least one playing partner for match play.', trainingNote: 'Shot by shot is switched on automatically in the round.'
+});
+
+/* Live-GPS */
+Object.assign(window.I18N.sv, {
+  gpsAge: 'senast uppdaterad för {s} s sedan',
+  frontEdge: 'Framkant', midGreen: 'Mitt', backEdge: 'Bakkant',
+  gpsActive: 'GPS aktiv', gpsLow: 'GPS låg noggrannhet', gpsLost: 'GPS-signal borta · senaste position för {s} s sedan', gpsNoPermission: 'GPS saknar behörighet', gpsTestBadge: 'SIMULERAD GPS',
+  distStale: 'Ingen ny GPS-position – avstånden gäller där du senast var. Gå ut i det fria eller vänta en stund.',
+  distWeak: 'Osäker position (±{a} m) – avstånden kan avvika.',
+  fromTeeFar: 'Du är mer än 800 m från greenen, så avstånden visas från tee. Byt hål om du står på ett annat hål.',
+  greenUserPts: 'Greenpunkter registrerade av dig.', edgesMissing: 'Kartdata saknar greenens kontur, så fram- och bakkant kan inte räknas. Registrera dem en gång så sparas de för banan.',
+  regGreen: 'Registrera green', regTitle: 'Greenpunkter för hål {n}', regHelp: 'Stå på punkten och tryck "Min position", eller tryck "På kartan" och sedan på satellitbilden. Punkterna sparas på banan.',
+  reg_front: 'Framkant', reg_mid: 'Mitt', reg_back: 'Bakkant', regSaved: 'sparad', regMissing: 'saknas', regHere: 'Min position', regOnMap: 'På kartan',
+  regNeedAcc: '"Min position" kräver GPS-noggrannhet på 10 m eller bättre.', regTapHint: 'Tryck på kartan där punkten ligger.', regDone: 'Punkten är sparad',
+  regAbbr_front: 'F', regAbbr_mid: 'M', regAbbr_back: 'B',
+  followMe: 'Följ mig', centerMe: 'Centrera', keepAwake: 'Skärmen tänd',
+  simBanner: 'SIMULERAD GPS – testläge. Detta är inte din riktiga position.', fwd20: '20 m fram', back20: '20 m bak', left20: '20 m vänster', right20: '20 m höger',
+  standStill: 'Stå stilla (brus)', loseSignal: 'Tappa signal', placeTee: 'Ställ mig på tee', testOff: 'Avsluta testläge', simTap: 'Testläge: tryck på kartan för att flytta din simulerade position.',
+  testModeStart: 'Starta GPS-testläge', testModeHelp: 'GPS-testläget simulerar rörelser på banan så att du kan prova avstånden hemma. Det visas alltid som SIMULERAD och används aldrig som riktig position.',
+  tapHint: 'Tryck på kartan för att mäta till en punkt. Dra för att flytta kartan, nyp för att zooma.'
+});
+Object.assign(window.I18N.en, {
+  gpsAge: 'last updated {s} s ago',
+  frontEdge: 'Front', midGreen: 'Middle', backEdge: 'Back',
+  gpsActive: 'GPS active', gpsLow: 'GPS low accuracy', gpsLost: 'GPS signal lost · last position {s} s ago', gpsNoPermission: 'GPS has no permission', gpsTestBadge: 'SIMULATED GPS',
+  distStale: 'No new GPS position – distances are from where you last were. Move into the open or wait a moment.',
+  distWeak: 'Uncertain position (±{a} m) – distances may be off.',
+  fromTeeFar: 'You are more than 800 m from the green, so distances are shown from the tee. Switch hole if you are on another hole.',
+  greenUserPts: 'Green points registered by you.', edgesMissing: 'The map data has no green outline, so front and back cannot be calculated. Register them once and they are saved for the course.',
+  regGreen: 'Register green', regTitle: 'Green points for hole {n}', regHelp: 'Stand on the point and tap "My position", or tap "On map" and then the satellite image. The points are saved on the course.',
+  reg_front: 'Front', reg_mid: 'Middle', reg_back: 'Back', regSaved: 'saved', regMissing: 'missing', regHere: 'My position', regOnMap: 'On map',
+  regNeedAcc: '"My position" needs GPS accuracy of 10 m or better.', regTapHint: 'Tap the map where the point is.', regDone: 'Point saved',
+  regAbbr_front: 'F', regAbbr_mid: 'M', regAbbr_back: 'B',
+  followMe: 'Follow me', centerMe: 'Center', keepAwake: 'Keep screen on',
+  simBanner: 'SIMULATED GPS – test mode. This is not your real position.', fwd20: '20 m forward', back20: '20 m back', left20: '20 m left', right20: '20 m right',
+  standStill: 'Stand still (noise)', loseSignal: 'Lose signal', placeTee: 'Put me on the tee', testOff: 'End test mode', simTap: 'Test mode: tap the map to move your simulated position.',
+  testModeStart: 'Start GPS test mode', testModeHelp: 'GPS test mode simulates movement on the course so you can try the distances at home. It is always shown as SIMULATED and never used as your real position.',
+  tapHint: 'Tap the map to measure to a point. Drag to move the map, pinch to zoom.'
 });
