@@ -267,17 +267,25 @@
   }
 
   // ---------- Hämta banor från OpenStreetMap ----------
-  var OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  // Flera öppna Overpass-servrar: om en är upptagen provas nästa.
+  var OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
   function timedFetch(url, opts, ms) {
     var ctl = typeof AbortController !== 'undefined' ? new AbortController() : null, tm = setTimeout(function () { if (ctl) ctl.abort(); }, ms);
     if (ctl) opts.signal = ctl.signal;
     return fetch(url, opts).then(function (r) { clearTimeout(tm); if (!r.ok) throw new Error('http ' + r.status); return r.json(); }, function (e) { clearTimeout(tm); throw e; });
   }
-  function overpass(q, i) {
+  function overpass(q, i, ms) {
     i = i || 0;
-    return timedFetch(OVERPASS[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q) }, 60000)
-      .catch(function (e) { if (i + 1 < OVERPASS.length) return overpass(q, i + 1); throw e; });
+    return timedFetch(OVERPASS[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q) }, ms || 60000)
+      .catch(function (e) { if (i + 1 < OVERPASS.length) return overpass(q, i + 1, ms); throw e; });
   }
+  function netDetail(e) {
+    var m = e && e.message ? String(e.message) : '';
+    if (e && e.name === 'AbortError') m = t('timedOut');
+    else if (/failed to fetch|load failed|networkerror/i.test(m)) m = t('noConnection');
+    return m ? ' (' + m + ')' : '';
+  }
+  function previewSuffix() { return /github\.io$|^localhost$/.test(location.hostname) ? '' : ' ' + t('previewNote'); }
   function findError() {
     view.find.status = 'error';
     view.find.msg = t('netError') + (/github\.io$|^localhost$/.test(location.hostname) ? '' : ' ' + t('previewNote'));
@@ -488,6 +496,10 @@
     h += '</section>';
 
     // Spel
+    ['match', 'nassau'].forEach(function (gt) {
+      var gc = s.games[gt];
+      if (gc && gc.on && !gc.sideA && s.extra.length) { var tms0 = setupTeams(); gc.sideA = tms0.length >= 2 ? tms0[0].id : 'me'; gc.sideB = tms0.length >= 2 ? tms0[1].id : s.extra[0].id; }
+    });
     var teams = setupTeams(), errs = setupErrors(c, te), list = s.mode === 'team' ? TYPES_TEAM : TYPES_OWN;
     var sideOpts = [{ id: 'me', name: state.profile.name || t('me') }].concat(s.extra).map(function (p) { return { id: p.id, name: p.name }; })
       .concat(teams.filter(function (x) { return x.members.length <= 2; }).map(function (x) { return { id: x.id, name: x.name }; }));
@@ -1235,16 +1247,36 @@
   function fetchDirectory() {
     dirState.status = 'loading'; dirState.msg = null; render();
     var q = '[out:json][timeout:120];area["ISO3166-1"="SE"][admin_level=2]->.se;(way[leisure=golf_course](area.se);relation[leisure=golf_course](area.se););out tags bb;';
-    overpass(q).then(function (j) {
+    overpass(q, 0, 150000).then(function (j) {
       var d = G.parseDirectory(j);
-      if (!d.items.length) throw new Error('empty');
+      if (!d.items.length) throw new Error(t('emptyResult'));
       dir = { fetchedAt: new Date().toISOString(), items: d.items, unnamed: d.unnamed };
       try { localStorage.setItem(DIR_KEY, JSON.stringify(dir)); } catch (e) {}
       dirState.status = 'done'; render();
-    }).catch(function () {
+    }).catch(function (e) {
       dirState.status = 'error';
-      dirState.msg = t('netError') + (/github\.io$|^localhost$/.test(location.hostname) ? '' : ' ' + t('previewNote'));
+      dirState.msg = t('dirFailed') + netDetail(e) + previewSuffix();
       render();
+    });
+  }
+  // Snabb hämtning av banor runt en position (mindre fråga än hela Sverige). Reserv: Nominatim.
+  var near = { status: 'idle', items: null, msg: null, key: null };
+  function fetchNearby(pos) {
+    var key = pos[0].toFixed(2) + ',' + pos[1].toFixed(2);
+    if (near.key === key && (near.status === 'loading' || near.status === 'done')) return;
+    near = { status: 'loading', items: near.items, msg: null, key: key }; render();
+    var q = '[out:json][timeout:40];(way[leisure=golf_course](around:60000,' + pos[0] + ',' + pos[1] + ');relation[leisure=golf_course](around:60000,' + pos[0] + ',' + pos[1] + '););out tags bb;';
+    overpass(q, 0, 45000).then(function (j) {
+      near.items = G.parseDirectory(j).items; near.status = 'done'; render();
+    }).catch(function (e) {
+      var d = 0.6, vb = [pos[1] - d, pos[0] + d / 2, pos[1] + d, pos[0] - d / 2].join(',');
+      timedFetch('https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=se&limit=40&bounded=1&viewbox=' + vb + '&q=golf', { headers: { 'Accept-Language': state.profile.lang } }, 20000).then(function (list) {
+        near.items = (list || []).filter(function (x) { return x.type === 'golf_course' && (x.osm_type === 'way' || x.osm_type === 'relation'); }).map(function (x) {
+          var bb = x.boundingbox.map(parseFloat);
+          return { n: x.name || x.display_name.split(',')[0], t: x.osm_type, id: x.osm_id, lat: +x.lat, lon: +x.lon, b: [bb[0], bb[2], bb[1], bb[3]], c: (x.display_name.split(',')[2] || '').trim(), h: null };
+        });
+        near.status = 'done'; render();
+      }).catch(function (e2) { near.status = 'error'; near.msg = t('nearFailed') + netDetail(e2 || e) + previewSuffix(); render(); });
     });
   }
   function addedRefs() { var m = {}; state.courses.forEach(function (c) { if (c.geo && c.geo.osmRef) m[c.geo.osmRef] = c.id; }); return m; }
@@ -1279,6 +1311,217 @@
     h += '<p class="note">' + esc(t('osmNote')) + (dir.unnamed ? ' ' + esc(fmt(t('dirUnnamed'), { n: dir.unnamed })) : '') + '</p>';
     h += '<button class="link" data-act="find">' + esc(t('dirOther')) + '</button>';
     return h + '</main>';
+  }
+
+  // ======================= NY STARTSIDA OCH "SPELA GOLF"-FLÖDE =======================
+  function svgUri(svg) { return "url('data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg).replace(/'/g, '%27') + "')"; }
+  // Egna illustrationer (inga foton från andra appar).
+  var HERO_BG = svgUri('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">' +
+    '<defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2E6F9E"/><stop offset=".55" stop-color="#9CC9DE"/><stop offset="1" stop-color="#E8E2C4"/></linearGradient>' +
+    '<linearGradient id="f" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4E9A4A"/><stop offset="1" stop-color="#1F5A30"/></linearGradient></defs>' +
+    '<rect width="400" height="300" fill="url(#s)"/><circle cx="320" cy="60" r="26" fill="#FFF6D8" opacity=".85"/>' +
+    '<path d="M0 150 L60 105 L110 135 L170 85 L230 130 L290 95 L350 128 L400 110 V190 H0Z" fill="#6E8C9E" opacity=".75"/>' +
+    '<path d="M0 175 Q100 140 200 165 T400 160 V300 H0Z" fill="#2F6B3A"/>' +
+    '<path d="M-20 300 Q120 205 250 190 Q330 182 420 196 V300Z" fill="url(#f)"/>' +
+    '<ellipse cx="282" cy="196" rx="44" ry="10" fill="#7CC67A"/><path d="M290 196 V160" stroke="#fff" stroke-width="2"/><path d="M290 160 L306 166 L290 172Z" fill="#D6B25E"/>' +
+    '<ellipse cx="226" cy="214" rx="20" ry="5" fill="#EADBA8"/>' +
+    '<g fill="#173F25"><circle cx="40" cy="168" r="14"/><circle cx="62" cy="160" r="18"/><circle cx="360" cy="172" r="16"/><circle cx="382" cy="164" r="12"/></g></svg>');
+  var AERIAL_BG = svgUri('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid slice">' +
+    '<rect width="400" height="400" fill="#1D4A2C"/><path d="M-40 420 C60 300 120 260 200 210 S340 90 440 -20" stroke="#3E8A4A" stroke-width="120" fill="none" stroke-linecap="round"/>' +
+    '<ellipse cx="300" cy="105" rx="62" ry="44" fill="#5DB067"/><path d="M228 150 q-30 10 -40 40 q22 6 46 -10 q10 -18 -6 -30z" fill="#E9DDB3"/>' +
+    '<path d="M330 40 q40 -6 58 22 q-24 18 -52 4z" fill="#E9DDB3"/><path d="M60 250 q30 -20 60 -6 q-10 28 -44 26 q-22 -4 -16 -20z" fill="#2E6FA8" opacity=".85"/>' +
+    '<g fill="#143A21" opacity=".9"><circle cx="40" cy="60" r="26"/><circle cx="80" cy="30" r="20"/><circle cx="370" cy="300" r="30"/><circle cx="330" cy="350" r="22"/></g></svg>');
+  var PLAY_ART = {
+    standard: '<svg viewBox="0 0 260 190" aria-hidden="true"><rect x="40" y="18" width="180" height="156" rx="14" fill="#fff"/><rect x="40" y="18" width="180" height="34" rx="14" fill="#1B5E45"/><rect x="40" y="38" width="180" height="14" fill="#1B5E45"/>' +
+      '<text x="58" y="40" font-size="13" font-weight="700" fill="#fff">SCOREKORT</text>' + [0, 1, 2, 3].map(function (i) { return '<rect x="56" y="' + (64 + i * 26) + '" width="90" height="10" rx="5" fill="#C9D5CE"/><circle cx="196" cy="' + (69 + i * 26) + '" r="10" fill="' + (i === 1 ? '#D6B25E' : '#2A7A5B') + '"/>'; }).join('') + '</svg>',
+    match: '<svg viewBox="0 0 260 190" aria-hidden="true"><circle cx="80" cy="95" r="46" fill="#fff"/><circle cx="180" cy="95" r="46" fill="#fff"/>' +
+      [[66, 82], [92, 80], [78, 104], [100, 106], [62, 108]].map(function (p) { return '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="4" fill="#C9D5CE"/>'; }).join('') +
+      [[166, 82], [192, 80], [178, 104], [200, 106], [162, 108]].map(function (p) { return '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="4" fill="#C9D5CE"/>'; }).join('') +
+      '<rect x="104" y="80" width="52" height="30" rx="15" fill="#D6B25E"/><text x="130" y="101" text-anchor="middle" font-size="16" font-weight="800" fill="#000">VS</text></svg>',
+    team: '<svg viewBox="0 0 260 190" aria-hidden="true"><circle cx="130" cy="95" r="70" fill="#1B5E45"/>' + [[130, 62], [96, 112], [164, 112]].map(function (p) {
+      return '<circle cx="' + p[0] + '" cy="' + (p[1] - 10) + '" r="14" fill="#fff"/><path d="M' + (p[0] - 20) + ' ' + (p[1] + 24) + ' q20 -30 40 0z" fill="#fff"/>'; }).join('') +
+      '<circle cx="130" cy="95" r="70" fill="none" stroke="#D6B25E" stroke-width="4"/></svg>',
+    training: '<svg viewBox="0 0 260 190" aria-hidden="true"><rect x="40" y="20" width="180" height="150" rx="14" fill="#fff"/>' +
+      [[64, 60], [96, 90], [128, 44], [160, 76]].map(function (b) { return '<rect x="' + b[0] + '" y="' + b[1] + '" width="22" height="' + (150 - b[1]) + '" rx="4" fill="#2A7A5B"/>'; }).join('') +
+      '<path d="M60 130 L100 104 L140 116 L196 64" stroke="#D6B25E" stroke-width="5" fill="none" stroke-linecap="round"/><circle cx="196" cy="64" r="8" fill="#D6B25E"/></svg>'
+  };
+  var PLAY_TYPES = ['standard', 'match', 'team', 'training'];
+
+  function greeting() { var hr = new Date().getHours(); return t(hr >= 5 && hr < 10 ? 'greetMorning' : hr >= 17 && hr < 23 ? 'greetEvening' : 'greetDay'); }
+  function initials(n) { return String(n || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(function (w) { return w.charAt(0).toUpperCase(); }).join('') || '?'; }
+
+  function viewHome2() {
+    var p = state.profile, first = (p.name || '').split(' ')[0], h = '';
+    h += '<header class="home-hero" style="background-image:' + HERO_BG + '"><div class="hh-row"><button class="avatar" data-act="tab:profile" aria-label="' + esc(t('navProfile')) + '">' + esc(initials(p.name)) + '</button></div>' +
+      '<h1 class="hh-greet">' + esc(greeting()) + (first ? ',<br><b>' + esc(first) + '</b>' : '') + '</h1></header>';
+    h += '<div class="hh-cards"><button class="hcard" data-act="tab:profile"><b>' + (state.friends || []).length + '</b><span>' + esc(t('friendsShort')) + '</span></button>' +
+      '<button class="hcard" data-act="tab:profile"><b>' + esc(p.hi === null ? '–' : C.formatHandicap(p.hi)) + '</b><span>HCP</span></button></div>';
+    h += '<main class="page home">';
+    if (!profileReady()) {
+      h += '<section class="welcome"><h2>' + esc(t('welcomeTitle')) + '</h2><p>' + esc(t('welcomeText')) + '</p><button class="btn gold big" data-act="tab:profile">' + esc(t('startHere')) + '</button></section>';
+    }
+    var ar = activeRound();
+    if (ar) {
+      var as = C.summarizeRound(ar, ar.tee);
+      h += '<button class="live-card" data-act="tab:round"><span><small>' + esc(t('ongoing')) + '</small><b>' + esc(ar.courseName) + '</b><small>' + esc(t('hole')) + ' ' + (ar.current + 1) + ' · ' + esc(t('resumeRound')) + ' ›</small></span><strong>' + (as.played ? signed(as.toPar) : '–') + '</strong></button>';
+    }
+    var done = doneRounds();
+    h += '<div class="sec-h"><h2>' + esc(t('roundsTitle')) + ' (' + done.length + ')</h2>' + (done.length ? '<button class="link" data-act="tab:stats">' + esc(t('showAllShort')) + '</button>' : '') + '</div>';
+    if (!done.length) h += '<div class="rcard empty"><p>' + esc(t('firstRoundHint')) + '</p></div>';
+    else h += '<div class="rcards">' + done.slice(0, 10).map(function (r) {
+      var big = '–';
+      if (r.mode === 'team') big = t('teamShort');
+      else { var s = metricsOf(r).s; big = s.played ? signed(s.toPar) : '–'; }
+      return '<button class="rcard" data-act="round:' + r.id + '"><b>' + esc(r.courseName) + '</b><small>' + esc(fmtDate(r.date)) + '</small>' +
+        '<small>' + esc(r.games && r.games.length ? r.games.map(function (g) { return t('g_' + g.type); }).join(', ') : t(r.format === 'stroke' ? 'strokePlay' : 'stableford')) + '</small><strong>' + esc(big) + '</strong></button>';
+    }).join('') + '</div>';
+    h += weatherBlock(homeWeatherCourse());
+    return h + '</main>';
+  }
+
+  function nav2() {
+    var ar = activeRound(), onPlay = view.tab === 'play' || view.tab === 'round';
+    var tabs = [['home', 'navHome', 'M4 11l8-7 8 7v9h-5v-6H9v6H4z'], ['courses', 'navCourses', 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14'], null,
+      ['stats', 'navStats', 'M5 20V11M12 20V5M19 20v-7'], ['profile', 'navProfile', 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1-4 4-6 8-6s7 2 8 6']];
+    return '<nav class="tabs five">' + tabs.map(function (x) {
+      if (!x) return '<div class="playslot"><button class="playbtn' + (onPlay ? ' on' : '') + (ar ? ' live' : '') + '" data-act="' + (ar ? 'tab:round' : 'play') + '"><span>' + (ar ? esc(t('toRound1')) + '<br>' + esc(t('toRound2')) : esc(t('playGolf1')) + '<br>' + esc(t('playGolf2'))) + '</span></button></div>';
+      var on = view.tab === x[0];
+      return '<button data-act="tab:' + x[0] + '" class="' + (on ? 'on' : '') + '"' + (on ? ' aria-current="page"' : '') + '><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + x[2] + '"/></svg><span>' + esc(t(x[1])) + '</span></button>';
+    }).join('') + '</nav>';
+  }
+
+  // --- Spela golf: 1) speltyp ---
+  function viewPlay() {
+    var pl = view.play;
+    if (pl.step === 'course') return viewPlayCourse();
+    var ty = PLAY_TYPES[pl.type], h = '<div class="pscreen ptype">';
+    h += '<div class="ptop"><button class="roundbtn" data-act="play-exit" aria-label="' + esc(t('cancel')) + '">‹</button><h1>' + esc(t('chooseGameType')) + '</h1><span></span></div>';
+    h += '<div class="pswipe" data-swipe="type"><div class="part">' + PLAY_ART[ty] + '</div>' +
+      '<div class="ptitle"><button class="roundbtn ghost" data-act="ptype:-1" aria-label="' + esc(t('prev')) + '">‹</button><h2>' + esc(t('pt_' + ty)) + '</h2><button class="roundbtn ghost" data-act="ptype:1" aria-label="' + esc(t('next')) + '">›</button></div>' +
+      '<p class="pdesc">' + esc(t('ptd_' + ty)) + '</p><div class="pdots">' + PLAY_TYPES.map(function (x, i) { return '<i class="' + (i === pl.type ? 'on' : '') + '"></i>'; }).join('') + '</div></div>';
+    h += '<button class="btn gold big pcta" data-act="play-type-ok">' + esc(t('chooseCourseCta')) + '</button>';
+    h += '<button class="link light" data-act="tab:round">' + esc(t('liveJoin')) + '</button>';
+    return h + '</div>';
+  }
+
+  // --- Spela golf: 2) närmaste bana ---
+  function playCandidates() {
+    var pos = view.play.pos, out = [], refs = {};
+    state.courses.forEach(function (c) {
+      if (c.demo) return;
+      if (c.geo && c.geo.osmRef) refs[c.geo.osmRef] = 1;
+      out.push({ kind: 'saved', id: c.id, name: c.name, sub: c.club || '', lat: c.lat, lon: c.lon, course: c });
+    });
+    var pool = dir ? dir.items : near.items;
+    if (pool && pos) {
+      G.searchDirectory(pool, '', pos, 40).forEach(function (x) {
+        var it = x.it; if (refs[it.t + '/' + it.id]) return;
+        refs[it.t + '/' + it.id] = 1;
+        out.push({ kind: 'dir', id: it.t + ':' + it.id, name: it.n, sub: it.c, lat: it.lat, lon: it.lon, it: it });
+      });
+    }
+    out.forEach(function (c) { c.d = pos && c.lat !== null && c.lat !== undefined ? G.dist(pos, [c.lat, c.lon]) : null; });
+    out.sort(function (a, b) { return a.d === null && b.d === null ? a.name.localeCompare(b.name, 'sv') : a.d === null ? 1 : b.d === null ? -1 : a.d - b.d; });
+    if (view.play.pinned) { out = out.filter(function (c) { return c.id !== view.play.pinned.id; }); out.unshift(view.play.pinned); }
+    var demo = courseById('demo'); if (demo) out.push({ kind: 'saved', id: 'demo', name: demo.name, sub: t('demo'), lat: null, lon: null, course: demo, d: null });
+    return out;
+  }
+  function viewPlayCourse() {
+    var pl = view.play, list = playCandidates(), cur = list[Math.min(pl.idx, list.length - 1)];
+    var h = '<div class="pscreen pcourse" style="background-image:' + AERIAL_BG + '">';
+    h += '<div class="ptop"><button class="link light" data-act="play-back">' + esc(t('back')) + '</button><h1>' + esc(t('courseCaps')) + '</h1><button class="link light" data-act="play-exit">' + esc(t('cancel')) + '</button></div>';
+    if (pl.search) return h + playSearch() + '</div>';
+    if (!cur) {
+      h += '<div class="pc-info"><h2>' + esc(t('noCoursesYet')) + '</h2></div>';
+    } else {
+      h += '<div class="pc-info pswipe" data-swipe="course"><h2>' + esc(cur.name) + '</h2>' + (cur.sub ? '<p>' + esc(cur.sub) + '</p>' : '') + '<div class="chips">' +
+        (cur.d !== null ? '<span class="pill">📍 ' + esc(dec(cur.d / 1000)) + ' km</span>' : '') +
+        (cur.kind === 'saved' && cur.course.geo ? '<span class="pill">GPS ' + G.coverage(cur.course.geo).holes + '/18</span>' : cur.kind === 'dir' ? '<span class="pill">' + esc(t('fetchOnContinue')) + '</span>' : '') +
+        (cur.kind === 'saved' && cur.id !== 'demo' ? '<button class="pill" data-act="play-details">' + esc(t('showDetails')) + '</button>' : '') + '</div></div>';
+    }
+    h += '<div class="pc-nav"><button class="roundbtn ghost" data-act="pcourse:-1"' + (pl.idx <= 0 ? ' disabled' : '') + ' aria-label="' + esc(t('prev')) + '">‹</button>' +
+      '<button class="searchbtn" data-act="play-search">🔍 ' + esc(t('searchCourses')) + '</button>' +
+      '<button class="roundbtn" data-act="pcourse:1"' + (pl.idx >= list.length - 1 ? ' disabled' : '') + ' aria-label="' + esc(t('next')) + '">›</button></div></div>';
+    h += '<div class="psheet">';
+    if (pl.posStatus === 'asking') h += '<p class="note">' + esc(t('findingNearest')) + '</p>';
+    if (pl.posStatus === 'denied') h += '<p class="note">' + esc(t('posForNearest')) + '</p>';
+    if (!dir && near.status === 'loading') h += '<p class="note">' + esc(t('nearLoading')) + '</p>';
+    else if (dirState.status === 'loading' && !(near.items && near.items.length)) h += '<p class="note">' + esc(t('dirLoading')) + '</p>';
+    if (!dir && dirState.status === 'error' && near.status !== 'done') {
+      h += '<p class="warn">' + esc(near.status === 'error' ? near.msg : dirState.msg) + '</p><button class="btn ghost" data-act="play-retry">' + esc(t('retry')) + '</button>';
+    }
+    if (pl.posStatus === 'ok' && near.status === 'done' && near.items && !near.items.length && !dir) h += '<p class="note">' + esc(t('noneNearby')) + '</p>';
+    if (cur && cur.d !== null) {
+      var sameArea = list.filter(function (c, i) { return i !== pl.idx && c.d !== null && G.dist([cur.lat, cur.lon], [c.lat, c.lon]) < 2500; }).slice(0, 6);
+      if (sameArea.length) h += '<h3>' + esc(t('sameArea')) + '</h3><div class="chips">' + sameArea.map(function (c) { return '<button class="chip" data-act="pcourse-to:' + esc(c.id) + '">' + esc(c.name) + '</button>'; }).join('') + '</div>';
+    }
+    if (cur && cur.kind === 'saved') {
+      h += '<h3>' + esc(t('chooseTee')) + '</h3><div class="choices">' + cur.course.tees.map(function (te, i) {
+        var on = (pl.teeId || cur.course.tees[0].id) === te.id;
+        return '<button class="choice' + (on ? ' on' : '') + '" data-act="ptee:' + te.id + '"><strong>' + esc(te.name) + '</strong><small>' + (C.teeRated(te) ? 'CR ' + dec(te.cr) + ' · Slope ' + te.slope : esc(t('noRatingTag'))) + ' · Par ' + C.sumPar(te.holes) + '</small></button>';
+      }).join('') + '</div>';
+    } else if (cur) h += '<p class="note">' + esc(t('dirCourseNote')) + '</p>';
+    if (pl.err) h += '<p class="warn">' + esc(pl.err) + '</p>';
+    h += '<button class="btn gold big" data-act="play-go"' + (!cur || pl.busy ? ' disabled' : '') + '>' + esc(pl.busy ? t('geoLoading') : t('gameSettings')) + ' »</button>';
+    return h + '</div>';
+  }
+  function playSearch() {
+    var q = view.play.q || '', h = '<div class="psearch"><input data-field="play.q" value="' + esc(q) + '" placeholder="' + esc(t('dirSearchPh')) + '" autocorrect="off" enterkeyhint="search"><div id="play-results">' + playResults() + '</div>' +
+      '<button class="btn ghost light" data-act="play-search-close">' + esc(t('close')) + '</button></div>';
+    return h;
+  }
+  function playResults() {
+    var q = view.play.q || '', f = G.fold(q).trim(), out = [];
+    state.courses.forEach(function (c) { if (!f || G.fold(c.name + ' ' + (c.club || '')).indexOf(f) >= 0) out.push('<button class="row light" data-act="psaved:' + c.id + '"><span class="row-main"><strong>' + esc(c.name) + '</strong><small>' + esc(t('added')) + '</small></span></button>'); });
+    var spool = dir ? dir.items : near.items;
+    if (spool && f) G.searchDirectory(spool, q, view.play.pos, 25).forEach(function (x) {
+      out.push('<button class="row light" data-act="pdir:' + x.it.t + ':' + x.it.id + '"><span class="row-main"><strong>' + esc(x.it.n) + '</strong><small>' + esc([x.it.c, x.d !== null ? dec(x.d / 1000) + ' km' : ''].filter(Boolean).join(' · ')) + '</small></span></button>');
+    });
+    if (!dir) out.push('<p class="note light">' + esc(t('dirNeeded')) + '</p><button class="btn ghost light" data-act="dir-load">' + esc(t('dirLoad')) + '</button>');
+    return out.join('') || '<p class="note light">' + esc(t('noResults')) + '</p>';
+  }
+  function osmComplete(geo) {
+    var hs = []; for (var i = 1; i <= 18; i++) hs.push(geo.holes[String(i)]);
+    if (!hs.every(function (h) { return h && h.par >= 3 && h.par <= 6; })) return false;
+    return hs.map(function (h) { return h.si; }).sort(function (a, b) { return a - b; }).join() === '1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18';
+  }
+  function startPlayCourseStep() {
+    view.play.step = 'course'; view.play.idx = 0;
+    if (!dir && view.play.pos) fetchNearby(view.play.pos);
+    if (!dir && dirState.status !== 'loading' && navigator.onLine !== false) fetchDirectory();
+    if (!view.play.pos && navigator.geolocation) {
+      view.play.posStatus = 'asking';
+      navigator.geolocation.getCurrentPosition(function (p) { view.play.pos = [p.coords.latitude, p.coords.longitude]; view.play.posStatus = 'ok'; view.play.idx = 0; if (!dir) fetchNearby(view.play.pos); if (view.tab === 'play') render(); },
+        function () { view.play.posStatus = 'denied'; if (view.tab === 'play') render(); }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
+    }
+  }
+  function goSetupFromPlay(course, teeId) {
+    var ty = PLAY_TYPES[view.play.type];
+    view.setup = { allowance: state.profile.allowance, format: 'stableford', extra: [], games: {}, teamOf: {}, add: {}, mode: 'own',
+      courseId: course.id, teeId: teeId || (course.tees.length === 1 ? course.tees[0].id : null), fromPlay: true, playType: ty };
+    if (ty === 'match') view.setup.games.match = { on: true };
+    if (ty === 'team') { view.setup.mode = 'team'; view.setup.teamMode = 'scramble2'; view.setup.games.teamStroke = { on: true }; }
+    if (ty === 'training') view.setup.training = true;
+    view.tab = 'home'; view.sub = 'setup'; window.scrollTo(0, 0);
+  }
+  function playGo() {
+    var pl = view.play, list = playCandidates(), cur = list[Math.min(pl.idx, list.length - 1)];
+    if (!cur) return;
+    if (cur.kind === 'saved') { goSetupFromPlay(cur.course, pl.teeId); render(); return; }
+    var it = cur.it, res = { name: it.n, osmType: it.t, osmId: it.id, lat: it.lat, lon: it.lon, bounds: it.b };
+    pl.busy = true; pl.err = null; render();
+    fetchCourseGeo(res).then(function (geo) {
+      pl.busy = false;
+      var course = { id: uid(), name: it.n, club: it.c || '', lat: +it.lat.toFixed(5), lon: +it.lon.toFixed(5), verified: false, geo: geo, tees: [teeFromGeo(geo)] };
+      if (osmComplete(geo)) {
+        state.courses.push(course); save(); view.flash = t('courseAdded'); goSetupFromPlay(course, course.tees[0].id); render();
+      } else {
+        course.isNew = true; view.draft = course; view.errors = []; view.playResume = PLAY_TYPES[pl.type];
+        view.tab = 'courses'; view.sub = 'edit'; view.flash = t('completeCard'); window.scrollTo(0, 0); render();
+      }
+    }).catch(function () {
+      pl.busy = false; pl.err = t('netError') + (/github\.io$|^localhost$/.test(location.hostname) ? '' : ' ' + t('previewNote')); render();
+    });
   }
 
   var state = load();
@@ -1459,14 +1702,22 @@
 
   // --- Starta rond ---
   function viewSetup() {
-    var s = view.setup, h = header(t('startRound'), 'tab:home');
+    var s = view.setup, h = header(t('startRound'), s.fromPlay ? 'play-back-course' : 'tab:home');
     h += '<main class="page">';
     if (!profileReady()) return h + '<p class="muted">' + esc(t('needProfile')) + '</p><button class="btn gold" data-act="tab:profile">' + esc(t('navProfile')) + '</button></main>';
+    if (s.fromPlay && courseById(s.courseId)) {
+      var pc = courseById(s.courseId);
+      h += '<section class="block"><div class="pickedcourse"><span><small>' + esc(t('pt_' + s.playType)) + '</small><b>' + esc(pc.name) + '</b></span><button class="chip" data-act="play-back-course">' + esc(t('change')) + '</button></div>';
+      if (s.playType === 'match' && !(s.extra || []).length) h += '<p class="note">' + esc(t('matchNeedsPlayers')) + '</p>';
+      if (s.training) h += '<p class="note">' + esc(t('trainingNote')) + '</p>';
+    } else {
     h += '<section class="block"><h3>' + esc(t('chooseCourse')) + '</h3><div class="choices">';
     state.courses.forEach(function (c) {
       h += '<button class="choice' + (s.courseId === c.id ? ' on' : '') + '" data-act="pick-course:' + c.id + '"><strong>' + esc(c.name) + '</strong><small>' + esc(c.club || '') + '</small>' + badge(c) + '</button>';
     });
-    h += '</div></section>';
+    h += '</div>';
+    }
+    h += '</section>';
     var c = s.courseId && courseById(s.courseId);
     if (c) {
       if (c.demo) h += '<p class="warn">' + esc(t('demoWarning')) + '</p>';
@@ -1782,13 +2033,15 @@
     var body;
     if (view.tab === 'live' && live.viewer) body = viewLive();
     else if (view.tab === 'shared' && view.shared) body = viewShared();
-    else if (view.tab === 'home') body = view.sub === 'setup' ? viewSetup() : viewHome();
+    else if (view.tab === 'play' && view.play) body = viewPlay();
+    else if (view.tab === 'home') body = view.sub === 'setup' ? viewSetup() : viewHome2();
     else if (view.tab === 'round') body = view.sub === 'setup' ? viewSetup() : viewRound();
     else if (view.tab === 'courses') body = view.sub === 'edit' ? viewCourseEdit() : viewCourses();
     else if (view.tab === 'stats') body = viewStats();
     else body = view.sub === 'setup' ? viewSetup() : viewProfile();
     var warn = storageOk ? '' : '<p class="warn tight">Lagringen är full eller blockerad – exportera dina data.</p>';
-    appEl.innerHTML = body + warn + flash() + nav();
+    appEl.className = view.tab === 'play' ? 'playmode' : '';
+    appEl.innerHTML = body + warn + flash() + (view.tab === 'play' ? '' : nav2());
     manageTimers();
     var inPlay = view.tab === 'round' && !view.sub && activeRound() && view.holeMode === 'hole';
     if (inPlay) { gps.lastRender = Date.now(); if (state.ui.gpsAuto && gps.watchId === null && gps.status !== 'denied' && !gps.sim && !document.hidden) gpsStart(); }
@@ -1833,6 +2086,7 @@
           tee: JSON.parse(JSON.stringify(te)), hi: state.profile.hi, allowance: view.setup.allowance || 100, format: view.setup.format || 'stableford', holes: holes, current: 0 });
         if (setupErrors(c, te).length) { state.rounds.pop(); return; }
         beginGroup(state.rounds[state.rounds.length - 1], c, te);
+        if (view.setup.training) state.ui.shotLog = true;
         gps.target = null; gps.suggest = null; gps.lastAuto = null; save(); view.tab = 'round'; view.sub = null; view.holeMode = 'hole'; window.scrollTo(0, 0); break;
       }
       case 'strokes': updateHole(function (d) { d.strokes = +v; d.pickedUp = false; if (typeof d.putts === 'number' && d.putts > d.strokes) d.putts = d.strokes; }); return;
@@ -2002,6 +2256,22 @@
       }
       case 'live-close': live.viewer = null; view.tab = 'home'; clearHash(); break;
       case 'live-save': { var lr = clone(live.viewer.round); lr.id = uid(); lr.status = 'done'; state.rounds.push(lr); save(); live.viewer = null; view.tab = 'stats'; clearHash(); view.flash = t('saved'); break; }
+      case 'play': view.play = { step: 'type', type: 0, idx: 0, pos: (view.play && view.play.pos) || null }; view.tab = 'play'; view.sub = null; window.scrollTo(0, 0); break;
+      case 'play-exit': view.tab = 'home'; view.sub = null; view.playResume = null; break;
+      case 'ptype': view.play.type = (view.play.type + (+v) + PLAY_TYPES.length) % PLAY_TYPES.length; break;
+      case 'play-type-ok': startPlayCourseStep(); window.scrollTo(0, 0); break;
+      case 'play-back': if (view.play.search) view.play.search = false; else view.play.step = 'type'; break;
+      case 'pcourse': view.play.idx = Math.max(0, view.play.idx + (+v)); view.play.teeId = null; view.play.err = null; break;
+      case 'pcourse-to': { var lst = playCandidates(); for (var pi = 0; pi < lst.length; pi++) if (lst[pi].id === v) view.play.idx = pi; view.play.teeId = null; break; }
+      case 'ptee': view.play.teeId = v; break;
+      case 'play-search': view.play.search = true; break;
+      case 'play-search-close': view.play.search = false; break;
+      case 'psaved': { var sc = courseById(v); if (sc) { view.play.pinned = { kind: 'saved', id: sc.id, name: sc.name, sub: sc.club || '', lat: sc.lat, lon: sc.lon, course: sc }; view.play.idx = 0; view.play.search = false; view.play.teeId = null; } break; }
+      case 'pdir': { var pd = v.split(':'), pit = (dir ? dir.items : near.items || []).filter(function (x) { return x.t === pd[0] && String(x.id) === pd[1]; })[0]; if (pit) { view.play.pinned = { kind: 'dir', id: pit.t + ':' + pit.id, name: pit.n, sub: pit.c, lat: pit.lat, lon: pit.lon, it: pit }; view.play.idx = 0; view.play.search = false; } break; }
+      case 'play-details': { var pl0 = playCandidates()[view.play.idx]; if (pl0 && pl0.kind === 'saved') { view.tab = 'courses'; onAct('edit-course:' + pl0.id); return; } break; }
+      case 'play-go': playGo(); return;
+      case 'play-retry': near.key = null; if (view.play.pos) fetchNearby(view.play.pos); if (!dir) fetchDirectory(); return;
+      case 'play-back-course': if (view.play) { view.tab = 'play'; view.sub = null; view.play.step = 'course'; } else { view.tab = 'home'; view.sub = null; } break;
       case 'hole-mode': view.holeMode = view.holeMode === 'hole' ? 'card' : 'hole'; window.scrollTo(0, 0); break;
       case 'finish': {
         if (!r) break;
@@ -2035,7 +2305,9 @@
         if (errs.length) { view.errors = errs; window.scrollTo(0, 0); break; }
         var isNew = d.isNew; delete d.isNew;
         if (isNew) state.courses.push(d); else state.courses = state.courses.map(function (c) { return c.id === d.id ? d : c; });
-        save(); view.sub = null; view.draft = null; view.errors = []; view.flash = t('saved'); break;
+        save(); view.sub = null; view.draft = null; view.errors = []; view.flash = t('saved');
+        if (view.playResume && view.play) { var savedC = isNew ? state.courses[state.courses.length - 1] : courseById(d.id); view.playResume = null; goSetupFromPlay(savedC, savedC.tees[0].id); }
+        break;
       }
       case 'delete-course': if (confirm(t('deleteConfirm'))) { state.courses = state.courses.filter(function (c) { return c.id !== view.draft.id; }); save(); view.sub = null; view.draft = null; } else return; break;
       case 'p-allowance': state.profile.allowance = +v; save(); break;
@@ -2079,6 +2351,7 @@
     if (key.indexOf('add.') === 0) { view.setup.add[key.slice(4)] = val; return; }
     if (key.indexOf('cloud.') === 0) { cloudForm[key.slice(6)] = val; return; }
     if (key === 'live.code') { view.liveCode = val; return; }
+    if (key === 'play.q') { if (view.play.q === val) return; view.play.q = val; var pr = document.getElementById('play-results'); if (pr) pr.innerHTML = playResults(); return; }
     if (key === 'dir.q') { if (view.dirQ === val) return; view.dirQ = val; var dl = document.getElementById('dir-list'); if (dl) dl.innerHTML = dirListHtml(); return; }
     if (key === 'sd.dist') { var ar = activeRound(); if (ar) shotDraft(ar).dist = val; return; }
     if (key.indexOf('bag.') === 0) {
@@ -2142,7 +2415,7 @@
     document.addEventListener('change', function (e) { if (e.target.hasAttribute('data-field')) onField(e.target); });
     document.addEventListener('input', function (e) {
       var k = e.target.getAttribute('data-field');
-      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code' || k === 'dir.q')) onField(e.target);
+      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code' || k === 'dir.q' || k === 'play.q')) onField(e.target);
     });
     window.addEventListener('pagehide', save);
     document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.getAttribute && e.target.getAttribute('data-field') === 'find.q') { view.find.q = e.target.value; searchCourses(view.find.q); } });
@@ -2167,6 +2440,13 @@
     if ('serviceWorker' in navigator && location.protocol === 'https:' && !/claude|anthropic/.test(location.hostname)) {
       navigator.serviceWorker.register('sw.js').catch(function () {});
     }
+    var sx = null;
+    document.addEventListener('touchstart', function (e) { var el = e.target.closest && e.target.closest('[data-swipe]'); sx = el ? { x: e.touches[0].clientX, y: e.touches[0].clientY, k: el.getAttribute('data-swipe') } : null; }, { passive: true });
+    document.addEventListener('touchend', function (e) {
+      if (!sx) return; var dx = e.changedTouches[0].clientX - sx.x, dy = e.changedTouches[0].clientY - sx.y, k = sx.k; sx = null;
+      if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx)) return;
+      onAct((k === 'type' ? 'ptype:' : 'pcourse:') + (dx < 0 ? 1 : -1));
+    }, { passive: true });
     setInterval(function () { syncNow(false); }, 60000);
     window.addEventListener('online', function () { syncNow(false); });
     document.addEventListener('visibilitychange', function () { if (!document.hidden) syncNow(false); });

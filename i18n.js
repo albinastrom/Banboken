@@ -409,3 +409,43 @@ Object.assign(window.I18N.en, {
   unratedRound: 'This tee has no Course Rating or Slope. The round is gross – no handicap strokes, net scores or score differential.',
   unratedBar: 'Gross round – no CR/Slope for this tee.', verr_unrated: 'Handicap games need CR and Slope for every player’s tee.'
 });
+
+/* Ny startsida och Spela golf-flöde */
+Object.assign(window.I18N.sv, {
+  timedOut: 'tidsgränsen nåddes', noConnection: 'ingen kontakt med servern', emptyResult: 'tomt svar', dirFailed: 'Kunde inte hämta alla svenska banor.', nearFailed: 'Kunde inte hämta banor i närheten.', nearLoading: 'Hämtar banor i närheten…', noneNearby: 'Inga golfbanor hittades inom 6 mil. Sök på namn i stället.',
+  greetMorning: 'Upp och hoppa', greetDay: 'Hej', greetEvening: 'God kväll', friendsShort: 'Vänner', ongoing: 'Pågående rond',
+  roundsTitle: 'Rundor', showAllShort: 'Visa alla', firstRoundHint: 'Tryck på Spela golf för att starta din första rond.', teamShort: 'Lag',
+  playGolf1: 'SPELA', playGolf2: 'GOLF', toRound1: 'TILL', toRound2: 'RONDEN',
+  chooseGameType: 'VÄLJ SPELTYP', chooseCourseCta: 'Välj bana',
+  pt_standard: 'STANDARDSPEL', pt_match: 'MATCHSPEL', pt_team: 'LAGSPEL', pt_training: 'TRÄNINGSROND',
+  ptd_standard: 'Spela själv eller med vänner. Scorekort, GPS-avstånd, statistik och coach efter ronden.',
+  ptd_match: 'Möt dina vänner hål för hål – singel eller bästboll, nassau eller skins. Ställningen räknas automatiskt.',
+  ptd_team: 'Scramble, Texas scramble, greensome eller foursome. Ett resultat per lag med rätt lag-handicap.',
+  ptd_training: 'Logga slag för slag för Strokes Gained, närspelsstatistik och dina riktiga klubblängder.',
+  back: 'Tillbaka', courseCaps: 'BANA', noCoursesYet: 'Ingen bana hittades ännu', fetchOnContinue: 'Hämtas när du fortsätter',
+  showDetails: 'Visa detaljer', searchCourses: 'Sök banor', findingNearest: 'Letar efter närmaste bana…',
+  posForNearest: 'Tillåt plats för att se närmaste bana först. Du kan också söka.', sameArea: 'Fler banor här',
+  dirCourseNote: 'Banan hämtas från OpenStreetMap när du fortsätter. Saknas par eller index får du fylla i dem från scorekortet.',
+  gameSettings: 'Spelinställningar', courseAdded: 'Banan är tillagd', completeCard: 'Komplettera par och index från scorekortet och tryck Spara.',
+  dirNeeded: 'Banregistret behövs för att söka bland alla svenska banor.', change: 'Byt',
+  matchNeedsPlayers: 'Lägg till minst en medspelare för matchspel.', trainingNote: 'Slag för slag slås på automatiskt i ronden.'
+});
+Object.assign(window.I18N.en, {
+  timedOut: 'timed out', noConnection: 'could not reach the server', emptyResult: 'empty response', dirFailed: 'Could not load all Swedish courses.', nearFailed: 'Could not load nearby courses.', nearLoading: 'Loading nearby courses…', noneNearby: 'No golf courses found within 60 km. Search by name instead.',
+  greetMorning: 'Good morning', greetDay: 'Hi', greetEvening: 'Good evening', friendsShort: 'Friends', ongoing: 'Round in progress',
+  roundsTitle: 'Rounds', showAllShort: 'Show all', firstRoundHint: 'Tap Play golf to start your first round.', teamShort: 'Team',
+  playGolf1: 'PLAY', playGolf2: 'GOLF', toRound1: 'TO', toRound2: 'ROUND',
+  chooseGameType: 'CHOOSE GAME TYPE', chooseCourseCta: 'Choose course',
+  pt_standard: 'STANDARD', pt_match: 'MATCH PLAY', pt_team: 'TEAM GAME', pt_training: 'PRACTICE ROUND',
+  ptd_standard: 'Play alone or with friends. Scorecard, GPS distances, stats and coach after the round.',
+  ptd_match: 'Take on your friends hole by hole – singles or four-ball, Nassau or skins. Standings are calculated automatically.',
+  ptd_team: 'Scramble, Texas scramble, greensome or foursomes. One score per team with the right team handicap.',
+  ptd_training: 'Log every shot for Strokes Gained, short-game stats and your real club distances.',
+  back: 'Back', courseCaps: 'COURSE', noCoursesYet: 'No course found yet', fetchOnContinue: 'Loaded when you continue',
+  showDetails: 'Show details', searchCourses: 'Search courses', findingNearest: 'Finding the nearest course…',
+  posForNearest: 'Allow location to see the nearest course first. You can also search.', sameArea: 'More courses here',
+  dirCourseNote: 'The course is loaded from OpenStreetMap when you continue. If par or index is missing you fill them in from the scorecard.',
+  gameSettings: 'Game settings', courseAdded: 'Course added', completeCard: 'Complete par and index from the scorecard and tap Save.',
+  dirNeeded: 'The course register is needed to search all Swedish courses.', change: 'Change',
+  matchNeedsPlayers: 'Add at least one playing partner for match play.', trainingNote: 'Shot by shot is switched on automatically in the round.'
+});
