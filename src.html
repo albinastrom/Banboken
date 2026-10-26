@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#09281F">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://server.arcgisonline.com; connect-src 'self' https://api.open-meteo.com https://overpass-api.de https://overpass.kumi.systems https://overpass.private.coffee https://maps.mail.ru https://nominatim.openstreetmap.org https://*.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://server.arcgisonline.com; connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://overpass-api.de https://overpass.kumi.systems https://overpass.private.coffee https://maps.mail.ru https://nominatim.openstreetmap.org https://*.supabase.co; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="description" content="Golfapp med GPS-avstånd, scorekort, WHS-handicap, matcher, statistik och Strokes Gained.">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -751,6 +751,9 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--champagne);outli
 .row.club strong{font-size:20px}
 .subcourses{border-left:2px solid var(--champagne);margin:0 0 6px 6px;padding-left:12px}
 .row.sub strong{font-family:var(--font);font-weight:650;font-size:17px}
+.wx-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.wx-h h3{margin:0}
+.wxsearch{margin-top:10px}
 .maplinks{display:flex;gap:16px;padding:6px 16px 0}
 .maplinks .link{padding:6px 0;font-size:14px}
 
@@ -861,6 +864,7 @@ dl.kv dd{font-weight:700}
 <noscript>Banboken behöver JavaScript.</noscript>
 <script>/*CORE*/</script>
 <script>/*GEO*/</script>
+<script>/*WEATHER*/</script>
 <script>/*GAMES*/</script>
 <script>/*STATS*/</script>
 <script>/*SYNC*/</script>

@@ -2,7 +2,7 @@
    Körs i appen (Profil → Kör beräkningstester) och med: node tests.js */
 (function (root) {
   'use strict';
-  function runTests(Core, Geo, Games, Stats, Sync, Ratings, Net) {
+  function runTests(Core, Geo, Games, Stats, Sync, Ratings, Net, Weather) {
     var results = [];
     function eq(name, actual, expected) {
       var ok = JSON.stringify(actual) === JSON.stringify(expected);
@@ -244,6 +244,23 @@ var dj = { elements: [
       eq('27 hål = tre 9-hålsslingor; två kan kombineras till 18', [g27.loops.length, Object.keys(comb.holes).length, comb.holes['10'].loop, comb.holes['10'].origRef], [3, 18, 'C', '1']);
       var tagged = [way(1, { golf: 'hole', ref: '1', 'golf:course': 'Gamla' }, [L(0, 0), L(0, 100)]), way(2, { golf: 'hole', ref: '1', 'golf:course': 'Nya' }, [L(50, 0), L(50, 100)])];
       eq('Uttrycklig taggning (golf:course) används först', Geo.buildFromOsm({ elements: tagged }, {}).loops.map(function (l) { return l.label; }), ['Gamla', 'Nya']);
+// Banrelationer enligt OpenStreetMaps rekommendation (type=golf med golf:course:name)
+      var rel = [];
+      for (var rl = 0; rl < 2; rl++) for (var rh = 0; rh < 18; rh++) rel.push(way(4000 + rl * 100 + rh, { golf: 'hole', ref: String(rh + 1), par: String(rl ? 5 : 4) }, [L(rl * 3000 + rh * 150, 0), L(rl * 3000 + rh * 150 + 100, 0)]));
+      function relEl(id, name, from) { var m = []; for (var q3 = 0; q3 < 18; q3++) m.push({ type: 'way', ref: from + q3, role: '' }); return { type: 'relation', id: id, tags: { type: 'golf', 'golf:course:name': name }, members: m }; }
+      var relJson = { elements: rel.concat([relEl(77, 'Gamla banan', 4000), relEl(78, 'Kungsbanan', 4100)]) };
+      var rg = Geo.buildFromOsm(relJson, { osmRef: 'way/1' });
+      eq('Banrelationer ger slingor med rätt namn', rg.loops.map(function (l) { return [l.label, l.count]; }), [['Gamla banan', 18], ['Kungsbanan', 18]]);
+      var only = Geo.buildFromOsm(relJson, { osmRef: 'relation/78', boundary: 'relation/78' });
+      eq('Vald banrelation: bara dess egna hål, inga slingor', [Object.keys(only.holes).length, only.holes['1'].par, only.loops], [18, 5, null]);
+      var pre = [way(1, { golf: 'hole', ref: 'G1', par: '4' }, [L(0, 0), L(0, 90)]), way(2, { golf: 'hole', ref: 'K1', par: '3' }, [L(900, 0), L(900, 90)])];
+      eq('Hålnummer med bokstav (G1, K1) tolkas och skiljs åt', Geo.buildFromOsm({ elements: pre }, {}).loops.map(function (l) { return [l.label, l.holes['1'].par]; }), [['G', 4], ['K', 3]]);
+      var rdir = Geo.parseDirectory({ elements: [crs(30, 'Testskogs GK', [55.0, 13.0, 55.03, 13.06]),
+        { type: 'relation', id: 31, tags: { type: 'golf', 'golf:course:name': 'Gamla banan' }, bounds: { minlat: 55.001, minlon: 13.001, maxlat: 55.014, maxlon: 13.028 } },
+        { type: 'relation', id: 32, tags: { type: 'golf', 'golf:course:name': 'Kungsbanan' }, bounds: { minlat: 55.016, minlon: 13.03, maxlat: 55.029, maxlon: 13.058 } }] });
+      var rcl = Geo.groupClubs(rdir.items).filter(function (c) { return c.name === 'Testskogs GK'; })[0];
+      eq('Banregister: klubbens banrelationer blir valbara banor före hämtning', rcl.courses.map(function (c) { return [c.label, c.item.t]; }), [['Gamla banan', 'relation'], ['Kungsbanan', 'relation']]);
+      eq('Kartdatafrågan hämtar banrelationer', /relation\[type=golf\];relation\[route=golf\];/.test(Geo.courseQuery({ type: 'way', id: 1 }, [55, 13, 55.1, 13.1])), true);
       eq('Demo-geometri: 18 hål med green', Geo.coverage(demo).greens, 18);
     }
 
@@ -441,6 +458,23 @@ var dj = { elements: [
       eq('Väntetid växer exponentiellt med tak', [Net.backoffMs(0, null, 0.5), Net.backoffMs(1, null, 0.5), Net.backoffMs(2, null, 0.5), Net.backoffMs(5, null, 0.5)], [1000, 2000, 4000, 8000]);
       eq('Retry-After från servern respekteras (max 8 s)', [Net.backoffMs(0, null, 0.5, 3), Net.backoffMs(0, null, 0.5, 60)], [3000, 8000]);
     }
+
+    if (Weather && Geo) {
+      var NOW = Date.parse('2026-10-25T12:00:00Z'), bastad = [56.43, 12.85], malmo = [55.60, 13.00];
+      eq('Väder startsida: vald plats går före position', Weather.homeContext({ manual: { name: 'Lund', lat: 55.7, lon: 13.2 }, anchor: { lat: 1, lon: 1 } }).place, 'Lund');
+      eq('Väder startsida: position från den här sessionen är bekräftad', [Weather.homeContext({ anchor: { lat: 55.6, lon: 13, place: 'Malmö' }, confirmed: true }).confirmed, Weather.homeContext({ anchor: { lat: 55.6, lon: 13 } }).confirmed], [true, false]);
+      eq('Väder startsida: utan position och plats → inget väder (inte senaste bana)', Weather.homeContext({}).kind, 'none');
+      var rc = { status: 'active' }, crs0 = { name: 'Båstad GK', lat: bastad[0], lon: bastad[1] };
+      eq('Väder ronden: banans koordinater medan ronden pågår', Weather.roundContext(rc, crs0).place, 'Båstad GK');
+      eq('Väder ronden: avslutad rond → inget rondväder', Weather.roundContext({ status: 'done' }, crs0), null);
+      eq('Förflyttning under 5 km → samma plats, över 5 km → ny plats', [Weather.shouldMove({ lat: malmo[0], lon: malmo[1] }, [55.62, 13.01]), Weather.shouldMove({ lat: malmo[0], lon: malmo[1] }, bastad)], [false, true]);
+      var ent = { fetchedAt: new Date(NOW - 10 * 60000).toISOString(), lat: malmo[0], lon: malmo[1] };
+      eq('Prognos 10 min gammal på samma plats hämtas inte om', Weather.needsFetch(ent, malmo[0], malmo[1], NOW), false);
+      eq('Prognos hämtas om efter 30 min', Weather.needsFetch({ fetchedAt: new Date(NOW - 31 * 60000).toISOString(), lat: malmo[0], lon: malmo[1] }, malmo[0], malmo[1], NOW), true);
+      eq('Cachad prognos för Båstad visas aldrig för Malmö', Weather.usable({ fetchedAt: new Date(NOW).toISOString(), lat: bastad[0], lon: bastad[1] }, malmo[0], malmo[1], NOW), false);
+      eq('Cachad prognos äldre än 3 timmar visas inte som aktuell', Weather.usable({ fetchedAt: new Date(NOW - 4 * 3600000).toISOString(), lat: malmo[0], lon: malmo[1] }, malmo[0], malmo[1], NOW), false);
+      eq('Ortnamn från adress', [Weather.placeName({ town: 'Staffanstorp' }), Weather.placeName({ city: 'Malmö', suburb: 'Limhamn' }), Weather.placeName(null)], ['Staffanstorp', 'Malmö', null]);
+    }
     return results;
   }
   if (typeof module !== 'undefined' && module.exports) module.exports = runTests;
@@ -484,7 +518,7 @@ function runAsyncNetTests(Net) {
 }
 if (typeof module !== 'undefined') module.exports.runAsyncNetTests = runAsyncNetTests;
 if (typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module) {
-  var r = module.exports(require('./core.js'), require('./geo.js'), require('./games.js'), require('./stats.js'), require('./sync.js'), require('./ratings.js'), require('./net.js'));
+  var r = module.exports(require('./core.js'), require('./geo.js'), require('./games.js'), require('./stats.js'), require('./sync.js'), require('./ratings.js'), require('./net.js'), require('./weather.js'));
   var failed = r.filter(function (x) { return !x.ok; });
   r.forEach(function (x) { console.log((x.ok ? 'OK   ' : 'FEL  ') + x.name + (x.ok ? '' : '  (fick ' + JSON.stringify(x.actual) + ', väntat ' + JSON.stringify(x.expected) + ')')); });
   runAsyncNetTests(require('./net.js')).then(function (ra) {

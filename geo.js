@@ -182,25 +182,39 @@
     return null;
   }
   function intTag(v) { var n = parseInt(v, 10); return isFinite(n) ? n : null; }
+  function courseNameOf(tg) { return String(tg['golf:course:name'] || tg.name || tg.ref || '').slice(0, 60) || null; }
 
   function buildFromOsm(json, meta) {
     var holes = {}, polys = { green: [], bunker: [], water: [], fairway: [], tee: [] }, dup = 0, cands = [], boundary = [];
-    var bref = meta && meta.boundary ? String(meta.boundary).split('/') : null;
+    var bref = meta && meta.boundary ? String(meta.boundary).split('/') : null, routes = [], members = null;
     (json.elements || []).forEach(function (el) {
+      var isRoute = el.type === 'relation' && el.tags && (el.tags.type === 'golf' || el.tags.route === 'golf');
+      if (isRoute) {
+        var ids = (el.members || []).filter(function (m) { return m.type === 'way'; }).map(function (m) { return m.ref; });
+        routes.push({ name: courseNameOf(el.tags), ids: ids });
+        if (bref && bref[0] === 'relation' && String(el.id) === bref[1]) members = ids;
+        return;
+      }
       if (bref && el.type === bref[0] && String(el.id) === bref[1]) { boundary = polysOf(el); return; }
       var t = el.tags || {}, k = kindOf(t);
       if (!k) return;
       if (k === 'hole') {
-        var line = geomOf(el), ref = String(intTag(t.ref) || '');
-        if (!ref || line.length < 2) return;
-        cands.push({ ref: ref, par: intTag(t.par), si: intTag(t.handicap), dist: intTag(t.dist), line: line, course: t['golf:course'] || t['golf:course:name'] || null });
+        var line = geomOf(el), rm = String(t.ref || '').trim().match(/^([^\d]*?)[\s.-]*(\d+)$/);
+        if (!rm || line.length < 2) return;
+        var ref = String(parseInt(rm[2], 10)), prefix = rm[1] ? rm[1].trim() : '';
+        cands.push({ id: el.id, ref: ref, par: intTag(t.par), si: intTag(t.handicap), dist: intTag(t.dist), line: line,
+          course: t['golf:course:name'] || t['golf:course'] || t['golf:loop'] || (prefix || null) });
       } else {
         polysOf(el).forEach(function (p) { polys[k].push(p); });
       }
     });
+    // Banrelationer (type=golf / route=golf): hålen märks med banans namn.
+    routes.forEach(function (r) { cands.forEach(function (h) { if (r.ids.indexOf(h.id) >= 0 && r.name) h.course = r.name; }); });
+    // Vald bana är en banrelation: bara dess egna hål.
+    if (members) cands = cands.filter(function (h) { return members.indexOf(h.id) >= 0; });
     // Hål från en grannbana i samma område tas bort: hålets mittpunkt måste ligga inom banans kontur.
     var outside = 0;
-    if (boundary.length) {
+    if (boundary.length && !members) {
       cands = cands.filter(function (h) {
         var mid = h.line[Math.floor(h.line.length / 2)], P = proj(mid);
         var inside = boundary.some(function (poly) { return pointInPolyXY([0, 0], poly.map(P.xy)); });
@@ -251,7 +265,7 @@
       ref.type + '(' + ref.id + ');' +
       'way[golf~"^(' + GOLF_KINDS + ')$"];' +
       'relation[golf~"^(green|bunker|fairway|tee|water_hazard|lateral_water_hazard)$"];' +
-      'way[natural=water];relation[natural=water];' +
+      'way[natural=water];relation[natural=water];relation[type=golf];relation[route=golf];' +
       ');out geom(' + bb + ');';
   }
   function boundsQuery(ref) { return '[out:json][timeout:15];' + ref.type + '(' + ref.id + ');out bb;'; }
@@ -429,14 +443,15 @@
     (json.elements || []).forEach(function (e) {
       var tg = e.tags || {}, b = e.bounds;
       if (!b || !isFinite(b.minlat)) return;
-      if (tg.golf === 'driving_range' || tg.golf === 'miniature_golf' || tg.leisure === 'miniature_golf') return;
-      var name = tg.name || tg['name:sv'];
+        if (tg.golf === 'driving_range' || tg.golf === 'miniature_golf' || tg.leisure === 'miniature_golf') return;
+      var isRoute = e.type === 'relation' && (tg.type === 'golf' || tg.route === 'golf');
+      var name = isRoute ? courseNameOf(tg) : (tg.name || tg['name:sv']);
       if (!name) { unnamed++; return; }
       var lat = (b.minlat + b.maxlat) / 2, lon = (b.minlon + b.maxlon) / 2;
       items.push({ n: String(name).slice(0, 80), t: e.type, id: e.id, lat: r6([lat, lon])[0], lon: r6([lat, lon])[1],
         b: [b.minlat, b.minlon, b.maxlat, b.maxlon].map(function (v) { return Math.round(v * 1e5) / 1e5; }),
         c: String(tg['addr:city'] || tg['addr:municipality'] || tg['is_in:municipality'] || '').slice(0, 40), h: intTag(tg.holes),
-        op: tg.operator ? String(tg.operator).slice(0, 80) : null });
+        op: tg.operator ? String(tg.operator).slice(0, 80) : null, route: isRoute || undefined, h2: intTag(tg['golf:holes'] || tg.holes) });
     });
     // Samma bana kan finnas som både yta och relation. Slå bara ihop när namnet är lika OCH ytorna i stort sett
     // täcker varandra – två olika banor med samma namn på en klubb får aldrig döljas.
@@ -537,7 +552,7 @@
     var counts = {};
     cands.forEach(function (h) { counts[h.ref] = (counts[h.ref] || 0) + 1; });
     if (!Object.keys(counts).some(function (r) { return counts[r] > 1; })) return [cands];
-    if (cands.every(function (h) { return h.course; })) {
+    if (cands.every(function (h) { return h.course; }) && Object.keys(cands.reduce(function (m, h) { m[h.course] = 1; return m; }, {})).length > 1) {
       var by = {}; cands.forEach(function (h) { (by[h.course] = by[h.course] || []).push(h); });
       return Object.keys(by).sort().map(function (k) { var l = by[k]; l.label = k; return l; });
     }

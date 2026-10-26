@@ -643,3 +643,21 @@ Object.assign(window.I18N.en, {
   loopWord: 'Loop', holeWord: 'holes', loopCombo: 'holes 1–9 {a}, holes 10–18 {b}', saveAllLoops: 'Save all loops as separate courses', chooseLoop: 'Choose loop',
   loopsSaved: '{n} courses saved.', loopsSkipped: '{n} loops have no par or index in the map data and were not saved – choose them one at a time to fill in.'
 });
+
+/* Väder per sammanhang, dubbletter */
+Object.assign(window.I18N.sv, {
+  wxRound: 'Väder vid {p} – pågående rond', wxAt: 'Väder i {p}', wxAtYou: 'Väder där du är', wxManualNote: 'Vald plats. Tryck "Min position" för att följa var du är.',
+  wxUseMyPos: 'Min position', wxLastKnown: 'Senast kända plats ({d}).', wxUpdating: 'Uppdaterar position…', wxChoosePlace: 'Välj plats', wxLocating: 'Hämtar din position…',
+  wxNeedPos: 'Vädret visas för platsen där du är. Appen behöver tillgång till din position.', wxShowHere: 'Visa väder där jag är',
+  wxDenied: 'Platsåtkomst är avstängd. Välj en plats här, eller slå på plats: Inställningar → Integritet och säkerhet → Platstjänster → Safari-webbplatser.',
+  wxNoPos: 'Positionen kunde inte hämtas just nu.', wxSearchPh: 'Sök ort, t.ex. Malmö',
+  otherLoops: 'fler slingor', dupCourseName: 'Det finns redan en bana med samma namn. Ge banan ett unikt namn, t.ex. med slingans namn.'
+});
+Object.assign(window.I18N.en, {
+  wxRound: 'Weather at {p} – round in progress', wxAt: 'Weather in {p}', wxAtYou: 'Weather where you are', wxManualNote: 'Chosen place. Tap "My position" to follow where you are.',
+  wxUseMyPos: 'My position', wxLastKnown: 'Last known place ({d}).', wxUpdating: 'Updating position…', wxChoosePlace: 'Choose place', wxLocating: 'Finding your position…',
+  wxNeedPos: 'Weather is shown for where you are. The app needs access to your position.', wxShowHere: 'Show weather where I am',
+  wxDenied: 'Location access is off. Choose a place here, or turn location on in Settings → Privacy & Security → Location Services → Safari Websites.',
+  wxNoPos: 'Your position could not be found right now.', wxSearchPh: 'Search town, e.g. Malmö',
+  otherLoops: 'more loops', dupCourseName: 'A course with the same name already exists. Give the course a unique name, e.g. including the loop name.'
+});

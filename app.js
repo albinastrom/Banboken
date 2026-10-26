@@ -1563,7 +1563,7 @@
   var dir = loadDir(), dirState = { status: 'idle', msg: null, pos: null };
   function fetchDirectory() {
     dirState.status = 'loading'; dirState.msg = null; render();
-    var q = '[out:json][timeout:120];area["ISO3166-1"="SE"][admin_level=2]->.se;(way[leisure=golf_course](area.se);relation[leisure=golf_course](area.se););out tags bb;';
+    var q = '[out:json][timeout:120];area["ISO3166-1"="SE"][admin_level=2]->.se;(way[leisure=golf_course](area.se);relation[leisure=golf_course](area.se);relation[type=golf](area.se);relation[route=golf](area.se););out tags bb;';
     overpass(q, 0, 150000, { maxAttempts: 3 }).then(function (j) {
       var d = G.parseDirectory(j);
       if (!d.items.length) throw new Error(t('emptyResult'));
@@ -1582,7 +1582,8 @@
     var key = pos[0].toFixed(2) + ',' + pos[1].toFixed(2);
     if (near.key === key && (near.status === 'loading' || near.status === 'done')) return;
     near = { status: 'loading', items: near.items, msg: null, key: key }; render();
-    var q = '[out:json][timeout:40];(way[leisure=golf_course](around:60000,' + pos[0] + ',' + pos[1] + ');relation[leisure=golf_course](around:60000,' + pos[0] + ',' + pos[1] + '););out tags bb;';
+    var ar = '(around:60000,' + pos[0] + ',' + pos[1] + ')';
+    var q = '[out:json][timeout:40];(way[leisure=golf_course]' + ar + ';relation[leisure=golf_course]' + ar + ';relation[type=golf]' + ar + ';relation[route=golf]' + ar + ';);out tags bb;';
     overpass(q, 0, 30000, { maxAttempts: 3 }).then(function (j) {
       near.items = G.parseDirectory(j).items; near.status = 'done'; render();
     }).catch(function (e) {
@@ -1703,7 +1704,7 @@
       return '<button class="rcard" data-act="round:' + r.id + '"><b>' + esc(r.courseName) + '</b><small>' + esc(fmtDate(r.date)) + '</small>' +
         '<small>' + esc(r.games && r.games.length ? r.games.map(function (g) { return t('g_' + g.type); }).join(', ') : t(r.format === 'stroke' ? 'strokePlay' : 'stableford')) + '</small><strong>' + esc(big) + '</strong></button>';
     }).join('') + '</div>';
-    h += weatherBlock(homeWeatherCourse());
+    h += homeWeatherBlock();
     return h + '</main>';
   }
 
@@ -1760,15 +1761,17 @@
       if (!cands[key]) { cands[key] = { id: key, name: name, lat: lat, lon: lon, sub: sub || '', courses: [] }; order.push(key); }
       return cands[key];
     }
-    state.courses.forEach(function (c) { if (c.demo) return; var r = courseOsmRef(c); if (r) byRef[r] = c; });
+    state.courses.forEach(function (c) { if (c.demo) return; var r = courseOsmRef(c); if (r) (byRef[r] = byRef[r] || []).push(c); });
     var clubs = pos ? G.searchClubs(dirClubs(), '', pos, 40).map(function (x) { return x.club; }) : [];
     if (view.play.pinnedClub && clubs.indexOf(view.play.pinnedClub) < 0) clubs.unshift(view.play.pinnedClub);
     clubs.forEach(function (cl) {
       var cd = cand('c:' + cl.key, cl.name, cl.lat, cl.lon, cl.c); cd.clubKey = cl.key;
       cl.courses.forEach(function (e) {
-        var sv = byRef[e.item.t + '/' + e.item.id];
-        if (sv) { cd.courses.push(savedEntry(sv, e.label)); placed[sv.id] = 1; }
-        else cd.courses.push({ kind: 'dir', id: 'd:' + e.item.t + ':' + e.item.id, label: e.label, holes: e.item.h, it: e.item, club: cl });
+        var svs = byRef[e.item.t + '/' + e.item.id] || [];
+        svs.forEach(function (sv) { cd.courses.push(savedEntry(sv, svs.length === 1 && !sv.loopIds ? e.label : null)); placed[sv.id] = 1; });
+        // Slingor från en gemensam yta: övriga slingor ska fortfarande gå att välja.
+        if (!svs.length || svs.some(function (sv) { return sv.loopIds; }))
+          cd.courses.push({ kind: 'dir', id: 'd:' + e.item.t + ':' + e.item.id, label: svs.length ? e.label + ' – ' + t('otherLoops') : e.label, holes: svs.length ? null : e.item.h, it: e.item, club: cl });
       });
     });
     state.courses.forEach(function (c) {
@@ -1813,7 +1816,8 @@
     var g = lp.geo, nineLoops = g.loops.filter(function (l) { return l.count === 9; });
     var h = '<h3>' + esc(fmt(t('loopsFound'), { n: g.loops.length })) + '</h3><p class="note">' + esc(t('loopsHelp')) + '</p><div class="teepick">';
     g.loops.forEach(function (l) {
-      h += '<button class="teerow choice" data-act="ploop:' + l.id + '"><span class="teedot" style="background:var(--forest)"></span><strong>' + esc(l.label || t('loopWord') + ' ' + l.id) + '</strong>' +
+      var have = savedLoop(lp, [l.id]);
+      h += '<button class="teerow choice" data-act="ploop:' + l.id + '"><span class="teedot" style="background:var(--forest)"></span><strong>' + esc(l.label || t('loopWord') + ' ' + l.id) + '</strong>' + (have ? '<em class="tag ok">' + esc(t('added')) + '</em>' : '') +
         '<span class="tmeta"><span>' + l.count + ' ' + esc(t('holesShort')) + '</span><span>' + esc(t('holeWord')) + ' ' + l.from + '–' + l.to + '</span></span></button>';
     });
     for (var i = 0; i < nineLoops.length; i++) for (var j = 0; j < nineLoops.length; j++) {
@@ -1823,6 +1827,10 @@
     }
     h += '</div><button class="btn ghost wide" data-act="ploop-all">' + esc(t('saveAllLoops')) + '</button><button class="link" data-act="ploop-cancel">' + esc(t('cancel')) + '</button>';
     return h;
+  }
+  function savedLoop(lp, ids) {
+    var ref = lp.osm ? lp.osm.type + '/' + lp.osm.id : null;
+    return state.courses.filter(function (c) { return ref && courseOsmRef(c) === ref && c.loopIds && c.loopIds.join() === ids.join(); })[0] || null;
   }
   // Skapar en bana från kartdata för vald slinga (eller kombination). Ofullständiga data → formuläret.
   function courseFromLoop(lp, ids) {
@@ -2317,7 +2325,7 @@
       var big = r.mode === 'team' ? t('teamShort') : (function () { var s = metricsOf(r).s; return s.played ? signed(s.toPar) : '–'; })();
       return '<button class="rcard" data-act="round:' + r.id + '"><b>' + esc(r.courseName) + '</b><small>' + esc(fmtDate(r.date)) + '</small><small>' + esc(r.nine ? t('hm_' + r.nine) : (r.games && r.games.length ? r.games.map(function (g) { return t('g_' + g.type); }).join(', ') : t(r.format === 'stroke' ? 'strokePlay' : 'stableford'))) + '</small><strong>' + esc(big) + '</strong></button>';
     }).join('') + '</div>';
-    h += weatherBlock(homeWeatherCourse());
+    h += homeWeatherBlock();
     return h + '</main>';
   }
 
@@ -2396,6 +2404,93 @@
         '<div class="distleg">' + keys.map(function (k) { return '<span><b>' + dec(sd.c[k] / Math.max(1, list.length), 1) + '</b>' + esc(t('sd_' + k)) + '</span>'; }).join('') + '</div><p class="note">' + esc(t('perRound')) + '</p></section>';
     }
     return h;
+  }
+
+  // ======================= VÄDER: STARTSIDA (POSITION) OCH ROND (BANA) =======================
+  var WX = window.Weather, PLACES_KEY = 'banboken:places';
+  var homeWx = { status: 'idle', confirmed: false, reqAt: 0 };
+  function readPlaces() { try { return JSON.parse(localStorage.getItem(PLACES_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function writePlaces(p) { try { var ks = Object.keys(p); if (ks.length > 60) ks.slice(0, ks.length - 60).forEach(function (k) { delete p[k]; }); localStorage.setItem(PLACES_KEY, JSON.stringify(p)); } catch (e) {} }
+  function fmtDateTime(iso) { try { return new Date(iso).toLocaleString(state.profile.lang === 'sv' ? 'sv-SE' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (e) { return iso; } }
+  function renderHomeIf() { if (view.tab === 'home' && !view.sub) render(); }
+  function geoPermission() {
+    try { if (navigator.permissions && navigator.permissions.query) return navigator.permissions.query({ name: 'geolocation' }).then(function (s) { return s.state; }, function () { return 'unknown'; }); } catch (e) {}
+    return Promise.resolve('unknown');
+  }
+  // Startsidans position. Frågar aldrig om behörighet utan att användaren tryckt, om den inte redan är given.
+  function homeLocate(userAction, fresh) {
+    if (!navigator.geolocation) { homeWx.status = 'unavailable'; renderHomeIf(); return; }
+    if (homeWx.status === 'asking') return;
+    if (!userAction && Date.now() - homeWx.reqAt < 60000) return;
+    homeWx.reqAt = Date.now();
+    geoPermission().then(function (st) {
+      if (st === 'denied') { homeWx.status = 'denied'; renderHomeIf(); return; }
+      if (!userAction && st !== 'granted' && !(st === 'unknown' && state.ui.homeGps)) { homeWx.status = 'prompt'; renderHomeIf(); return; }
+      homeWx.status = 'asking'; renderHomeIf();
+      navigator.geolocation.getCurrentPosition(function (p) {
+        var pos = [p.coords.latitude, p.coords.longitude], anchor = state.ui.homeAnchor;
+        state.ui.homeGps = true;
+        if (WX.shouldMove(anchor, pos)) {
+          anchor = { lat: +pos[0].toFixed(4), lon: +pos[1].toFixed(4), place: null, at: new Date().toISOString() };
+          state.ui.homeAnchor = anchor; reverseName(anchor);
+        } else anchor.at = new Date().toISOString();
+        homeWx.confirmed = true; homeWx.status = 'ok'; save(); renderHomeIf();
+      }, function (e) {
+        homeWx.status = e && e.code === 1 ? 'denied' : e && e.code === 3 ? 'timeout' : 'unavailable';
+        if (e && e.code === 1) state.ui.homeGps = false;
+        renderHomeIf();
+      }, { enableHighAccuracy: false, timeout: 15000, maximumAge: fresh || userAction ? 0 : 60000 });
+    });
+  }
+  // Ortnamn för positionen (en gång per ca 2 km ruta, sparas lokalt).
+  function reverseName(anchor) {
+    var key = anchor.lat.toFixed(2) + ',' + anchor.lon.toFixed(2), places = readPlaces();
+    if (places[key]) { anchor.place = places[key]; return; }
+    timedFetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=12&lat=' + anchor.lat + '&lon=' + anchor.lon + '&accept-language=' + state.profile.lang, {}, 12000).then(function (j) {
+      var n = WX.placeName(j && j.address);
+      if (n && state.ui.homeAnchor === anchor) { anchor.place = n; places[key] = n; writePlaces(places); save(); renderHomeIf(); }
+    }).catch(function () {});
+  }
+  function wxSection(title, body, tools) { return '<section class="block weather"><div class="wx-h"><h3>' + esc(title) + '</h3>' + (tools || '') + '</div>' + body + '</section>'; }
+  function homeWeatherBlock() {
+    var ar = activeRound(), rc = ar ? WX.roundContext(ar, courseById(ar.courseId)) : null;
+    if (rc) return wxSection(fmt(t('wxRound'), { p: rc.place }), weatherBody(rc.lat, rc.lon), '');
+    var hc = WX.homeContext({ manual: state.ui.weatherPlace, anchor: state.ui.homeAnchor, confirmed: homeWx.confirmed });
+    var title = t('weather'), body = '', tools = '';
+    if (hc.kind === 'manual') {
+      title = fmt(t('wxAt'), { p: hc.place }); body = '<p class="note">' + esc(t('wxManualNote')) + '</p>' + weatherBody(hc.lat, hc.lon);
+      tools = '<button class="chip" data-act="wx-gps">' + esc(t('wxUseMyPos')) + '</button>';
+    } else if (hc.kind === 'gps') {
+      title = hc.place ? fmt(t('wxAt'), { p: hc.place }) : t('wxAtYou');
+      if (!hc.confirmed) body += '<p class="note">' + esc(fmt(t('wxLastKnown'), { d: fmtDateTime(state.ui.homeAnchor.at) })) + (homeWx.status === 'asking' ? ' ' + esc(t('wxUpdating')) : '') + '</p>';
+      body += weatherBody(hc.lat, hc.lon);
+      tools = '<button class="chip" data-act="wx-search">' + esc(t('wxChoosePlace')) + '</button>';
+    }
+    if (hc.kind !== 'manual') {
+      if (homeWx.status === 'asking' && hc.kind === 'none') body += '<p class="muted">' + esc(t('wxLocating')) + '</p>';
+      if ((homeWx.status === 'prompt' || homeWx.status === 'idle') && hc.kind === 'none') body += '<p class="note">' + esc(t('wxNeedPos')) + '</p><button class="btn ghost" data-act="wx-locate">' + esc(t('wxShowHere')) + '</button>';
+      if (homeWx.status === 'denied') body += '<p class="note">' + esc(t('wxDenied')) + '</p>';
+      if (homeWx.status === 'timeout' || homeWx.status === 'unavailable') body += '<p class="note">' + esc(t('wxNoPos')) + '</p><button class="chip" data-act="wx-locate">' + esc(t('retry')) + '</button>';
+      if (!tools) tools = '<button class="chip" data-act="wx-search">' + esc(t('wxChoosePlace')) + '</button>';
+    }
+    if (view.wxSearch) body += wxSearchHtml();
+    return wxSection(title, body, tools);
+  }
+  function wxSearchHtml() {
+    var s = view.wxSearch, h = '<div class="wxsearch"><div class="searchrow"><input data-field="wx.q" value="' + esc(s.q || '') + '" placeholder="' + esc(t('wxSearchPh')) + '" autocorrect="off" enterkeyhint="search"><button class="btn ghost" data-act="wx-find">' + esc(t('search')) + '</button></div>';
+    if (s.status === 'loading') h += '<p class="muted">…</p>';
+    if (s.status === 'error') h += '<p class="warn">' + esc(s.msg) + '</p>';
+    (s.results || []).forEach(function (r, i) { h += '<button class="row" data-act="wx-pick:' + i + '"><span class="row-main"><strong>' + esc(r.name) + '</strong><small>' + esc([r.admin1, r.country].filter(Boolean).join(', ')) + '</small></span></button>'; });
+    if (s.status === 'done' && !(s.results || []).length) h += '<p class="muted">' + esc(t('noResults')) + '</p>';
+    return h + '<button class="link" data-act="wx-search-close">' + esc(t('close')) + '</button></div>';
+  }
+  function wxFind() {
+    var s = view.wxSearch; if (!s || !String(s.q || '').trim()) return;
+    s.status = 'loading'; render();
+    timedFetch('https://geocoding-api.open-meteo.com/v1/search?count=8&format=json&language=' + state.profile.lang + '&name=' + encodeURIComponent(s.q.trim()), {}, 12000).then(function (j) {
+      s.results = ((j && j.results) || []).map(function (r) { return { name: r.name, admin1: r.admin1, country: r.country, lat: r.latitude, lon: r.longitude }; });
+      s.status = 'done'; render();
+    }, function (e) { s.status = 'error'; s.msg = errText(e); render(); });
   }
 
   var state = load();
@@ -2481,17 +2576,12 @@
     h += '<section class="block"><h3>' + esc(t('lastRound')) + '</h3>';
     if (done.length) h += roundRow(done[0]); else h += '<p class="muted">' + esc(t('noRounds')) + '</p>';
     h += '</section>';
-    h += weatherBlock(homeWeatherCourse());
+    h += homeWeatherBlock();
     h += '</main>';
     return h;
   }
 
-  function homeWeatherCourse() {
-    var ar = activeRound();
-    if (ar) { var c = courseById(ar.courseId); if (c) return c; }
-    var home = state.courses.filter(function (c) { return !c.demo && c.lat !== null && c.lat !== undefined; })[0];
-    return home || null;
-  }
+  // (Tidigare valdes "första sparade banan" som startsidans väderplats – borttaget; se homeWeatherBlock.)
 
   function roundRow(r) {
     if (r.mode === 'team' || (r.shared && !r.holes.some(function (d) { return typeof d.strokes === 'number'; }))) {
@@ -2524,7 +2614,7 @@
     try {
       fetch(url).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (d) {
         clearTimeout(timer);
-        var data = { fetchedAt: new Date().toISOString(), d: d };
+        var data = { fetchedAt: new Date().toISOString(), d: d, lat: lat, lon: lon };
         weatherLive[k] = { status: 'ok' };
         state.weatherCache[k] = data; save(); render();
       }).catch(function () { clearTimeout(timer); weatherLive[k] = { status: location.protocol === 'file:' ? 'error' : 'blockedOrError' }; render(); });
@@ -2542,9 +2632,11 @@
   function hereWeather() { return herePos ? weatherBody(herePos.lat, herePos.lon) : ''; }
 
   function weatherBody(lat, lon) {
-    var k = wKey(lat, lon), live = weatherLive[k], cache = state.weatherCache[k];
-    var fresh = cache && (Date.now() - new Date(cache.fetchedAt).getTime() < 30 * 60 * 1000);
-    if (!live && !fresh) { setTimeout(function () { fetchWeather(lat, lon); }, 0); live = { status: 'loading' }; }
+    var k = wKey(lat, lon), live = weatherLive[k], cache = state.weatherCache[k], now = Date.now();
+    if (cache && !WX.usable(cache, lat, lon, now)) cache = null;
+    if ((!live || live.status === 'ok') && WX.needsFetch(state.weatherCache[k], lat, lon, now) && !(live && live.status === 'loading')) {
+      if (!live || live.status !== 'loading') { setTimeout(function () { fetchWeather(lat, lon); }, 0); live = { status: 'loading' }; }
+    }
     var h = '';
     if (cache) h += weatherCard(cache, live && live.status !== 'ok');
     if (live && live.status === 'loading' && !cache) h += '<p class="muted">…</p>';
@@ -2948,6 +3040,7 @@
     var entering = vkey !== view.lastVkey; view.lastVkey = vkey;
     appEl.innerHTML = body + warn + flash() + (view.tab === 'play' ? '' : nav2());
     if (entering) { var mn = appEl.querySelector('main'); if (mn) mn.classList.add('enter'); }
+    if (view.tab === 'home' && !view.sub && !state.ui.weatherPlace && !activeRound()) homeLocate(false);
     manageTimers();
     var inPlay = view.tab === 'round' && !view.sub && activeRound() && view.holeMode === 'hole';
     if (inPlay) {
@@ -3202,14 +3295,15 @@
       }
       case 'ploop': {
         var lpk = view.play && view.play.loopPick ? view.play.loopPick : view.loopPick; if (!lpk) return;
-        var nc = courseFromLoop(lpk, v.split(','));
+        var ids0 = v.split(','), existing = savedLoop(lpk, ids0);
         if (view.play) view.play.loopPick = null; view.loopPick = null;
-        finishCourse(nc, lpk.from); break;
+        if (existing) { if (lpk.from === 'play') goSetupFromPlay(existing, null); else { view.tab = 'courses'; view.sub = null; onAct('edit-course:' + existing.id); return; } break; }
+        finishCourse(courseFromLoop(lpk, ids0), lpk.from); break;
       }
       case 'ploop-all': {
         var lpa = view.play && view.play.loopPick ? view.play.loopPick : view.loopPick; if (!lpa) return;
         var made = 0, skipped = 0;
-        lpa.geo.loops.forEach(function (l) { var c1 = courseFromLoop(lpa, [l.id]); if (osmComplete(c1.geo)) { state.courses.push(c1); made++; } else skipped++; });
+        lpa.geo.loops.forEach(function (l) { if (savedLoop(lpa, [l.id])) return; var c1 = courseFromLoop(lpa, [l.id]); if (osmComplete(c1.geo)) { state.courses.push(c1); made++; } else skipped++; });
         save(); view.flash = fmt(t('loopsSaved'), { n: made }) + (skipped ? ' ' + fmt(t('loopsSkipped'), { n: skipped }) : '');
         if (view.play) { view.play.loopPick = null; view.play.sel = null; } view.loopPick = null; break;
       }
@@ -3286,6 +3380,12 @@
       case 'statsn': state.ui.statsN = +v; save(); break;
       case 'weather-here': getPos(function (lat, lon) { herePos = { lat: lat, lon: lon }; render(); }); return;
       case 'weather-retry': { var ll = v.split(','); fetchWeather(+ll[0], +ll[1]); break; }
+      case 'wx-locate': homeLocate(true); return;
+      case 'wx-gps': state.ui.weatherPlace = null; save(); homeLocate(true); break;
+      case 'wx-search': view.wxSearch = { q: '', results: null, status: 'idle' }; break;
+      case 'wx-search-close': view.wxSearch = null; break;
+      case 'wx-find': wxFind(); return;
+      case 'wx-pick': { var wr = view.wxSearch && view.wxSearch.results[+v]; if (wr) { state.ui.weatherPlace = { name: wr.name, lat: +wr.lat.toFixed(4), lon: +wr.lon.toFixed(4) }; view.wxSearch = null; save(); } break; }
       case 'new-course': view.sub = 'edit'; view.errors = []; view.draft = { isNew: true, id: uid(), name: '', club: '', lat: null, lon: null, verified: false, tees: [blankTee()] }; window.scrollTo(0, 0); break;
       case 'edit-course': view.sub = 'edit'; view.errors = []; view.draft = JSON.parse(JSON.stringify(courseById(v))); window.scrollTo(0, 0); break;
       case 'back-courses': view.sub = null; view.draft = null; view.errors = []; break;
@@ -3296,6 +3396,7 @@
       case 'save-course': {
         var d = view.draft, errs = [];
         if (!String(d.name || '').trim()) errs.push(t('courseName'));
+        else if (state.courses.some(function (c) { return c.id !== d.id && RT.fold(c.name) === RT.fold(d.name); })) errs.push(t('dupCourseName'));
         d.tees.forEach(function (te) {
           C.validateTee(te).forEach(function (e) { errs.push((te.name || t('tee')) + ': ' + e); });
         });
@@ -3311,7 +3412,7 @@
       case 'p-allowance': state.profile.allowance = +v; save(); break;
       case 'lang': state.profile.lang = v; save(); break;
       case 'theme': state.profile.theme = v; save(); break;
-      case 'run-tests': view.tests = window.runCoreTests(C, window.Geo, window.Games, window.Stats, window.Sync, window.Ratings, window.Net); break;
+      case 'run-tests': view.tests = window.runCoreTests(C, window.Geo, window.Games, window.Stats, window.Sync, window.Ratings, window.Net, window.Weather); break;
       case 'export': {
         var blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
         var fname = 'banboken-' + new Date().toISOString().slice(0, 10) + '.json';
@@ -3349,6 +3450,7 @@
     if (key.indexOf('add.') === 0) { view.setup.add[key.slice(4)] = val; return; }
     if (key.indexOf('cloud.') === 0) { cloudForm[key.slice(6)] = val; return; }
     if (key === 'live.code') { view.liveCode = val; return; }
+    if (key === 'wx.q') { if (view.wxSearch) view.wxSearch.q = val; return; }
     if (key === 'setup.q') { if (view.setupQ === val) return; view.setupQ = val; var scl = document.getElementById('setup-courses'); if (scl && view.setup) scl.innerHTML = courseList(view.setup); return; }
     if (key === 'play.q') { if (view.play.q === val) return; view.play.q = val; var pr = document.getElementById('play-results'); if (pr) pr.innerHTML = playResults(); return; }
     if (key === 'dir.q') { if (view.dirQ === val) return; view.dirQ = val; var dl = document.getElementById('dir-list'); if (dl) dl.innerHTML = dirListHtml(); return; }
@@ -3436,10 +3538,15 @@
     document.addEventListener('change', function (e) { if (e.target.hasAttribute('data-field')) onField(e.target); });
     document.addEventListener('input', function (e) {
       var k = e.target.getAttribute('data-field');
-      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code' || k === 'dir.q' || k === 'play.q' || k === 'setup.q' || k === 'adm.pin' || k === 'adm.pin2' || k === 'adm.text' || (k && k.indexOf('admf.') === 0))) onField(e.target);
+      if (k && (k.indexOf('c.') === 0 || /^t\d/.test(k) || k === 'find.q' || k.indexOf('add.') === 0 || k === 'sd.dist' || k.indexOf('cloud.') === 0 || k === 'live.code' || k === 'dir.q' || k === 'play.q' || k === 'setup.q' || k === 'wx.q' || k === 'adm.pin' || k === 'adm.pin2' || k === 'adm.text' || (k && k.indexOf('admf.') === 0))) onField(e.target);
     });
     window.addEventListener('pagehide', save);
-    document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.getAttribute && e.target.getAttribute('data-field') === 'find.q') { view.find.q = e.target.value; searchCourses(view.find.q); } });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' || !e.target.getAttribute) return;
+      var fk = e.target.getAttribute('data-field');
+      if (fk === 'find.q') { view.find.q = e.target.value; searchCourses(view.find.q); }
+      if (fk === 'wx.q' && view.wxSearch) { view.wxSearch.q = e.target.value; wxFind(); }
+    });
     document.addEventListener('pointerdown', onMapDown);
     document.addEventListener('pointermove', onMapMove);
     document.addEventListener('pointerup', onMapUp);
@@ -3453,6 +3560,8 @@
     document.addEventListener('visibilitychange', function () {
       if (document.hidden) { if (!gps.test) gpsStop(); releaseWake(); return; }
       if (view.tab === 'play' && view.play && view.play.step === 'course' && Date.now() - (view.play.posAt || 0) > 10 * 60000) requestPlayPos();
+      homeWx.confirmed = false; homeWx.reqAt = 0;
+      if (view.tab === 'home' && !view.sub && !state.ui.weatherPlace && !activeRound()) homeLocate(false, true);
       render();
     });
     if (window.matchMedia) {

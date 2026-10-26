@@ -8,7 +8,7 @@ Allt sparas i telefonen efter varje tryck, så ingenting försvinner vid dålig 
 1. Packa upp zip-filen i appen Filer (tryck på filen).
 2. Öppna github.com/albinastrom/banboken i Safari → **Add file → Upload files**.
 3. Välj dessa filer: `index.html`, `manifest.webmanifest`, `sw.js`, `icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `README.md`, `supabase.sql`
-   (källfilerna `core.js`, `geo.js`, `games.js`, `stats.js`, `sync.js`, `ratings.js`, `net.js`, `tests.js`, `i18n.js`, `app.js`, `src.html`, `build.js` kan också laddas upp – appen behöver dem inte för att köras).
+   (källfilerna `core.js`, `geo.js`, `games.js`, `stats.js`, `sync.js`, `ratings.js`, `net.js`, `weather.js`, `tests.js`, `i18n.js`, `app.js`, `src.html`, `build.js` kan också laddas upp – appen behöver dem inte för att köras).
    Har du redan laddat upp etapp 1: ladda upp de nya filerna med samma namn så ersätts de.
 4. Tryck **Commit changes**.
 5. **Settings → Pages** → Source: *Deploy from a branch* → Branch: `main`, mapp `/ (root)` → Save.
@@ -29,6 +29,7 @@ Uppdatera: ladda upp en ny `index.html` med samma namn. Appen hämtar den nya ve
 | `games.js` | Spelformer: handicapreduktion per spelform, matchstatus, bästboll, sämstboll, nassau, skins, scramble, Texas scramble, greensome, foursome |
 | `stats.js` | Slagloggar, utökad statistik, Strokes Gained (personlig eller importerad baslinje), regelbaserad coach, klubblängder och klubbförslag |
 | `ratings.js` | Tee- och ratingsystem: datamodell, import (CSV/JSON), validering, slopetabell, herr/dam, 9 hål, granskningsrapport |
+| `weather.js` | Vädersammanhang (startsida/rond), när prognos och ortnamn ska hämtas, när cache får visas |
 | `net.js` | Robust hämtning: felklassning, nya försök med exponentiell väntan, delade anrop, cache för kartdata |
 | `sync.js` | Synklogik: vilka dokument som skickas, sammanslagning vid hämtning, livematchens resultat |
 | `supabase.sql` | Databasen för molnsynk och livematcher, med radnivåsäkerhet |
@@ -116,12 +117,18 @@ Course Rating och Slope finns inte i öppna data (de ägs av Svenska Golfförbun
 **Datamodell:** Klubb → Bana → Tee. Varje bana är en egen post med eget ID, egna tees, egen håldata (par, index, längd) och egen kartdata; ronder, scorekort och statistik pekar på banans ID, så två banor på samma klubb blandas aldrig. Banor på samma klubb har gemensamt klubbnamn (`club`) och klubbnyckel (`clubKey`).
 
 **Så identifieras klubbens banor (generellt, för alla klubbar):**
+0. *Banrelationer i OpenStreetMap* – det rekommenderade sättet att skilja banor åt: relationer med `type=golf` (och äldre `route=golf`) med `golf:course:name`. De hämtas både i banregistret (så klubbens banor syns innan kartdata laddats) och i kartdatafrågan (så rätt hål hör till rätt bana). Hålnummer med bokstav (t.ex. `G1`, `K1`) och taggarna `golf:course:name`/`golf:loop` på hålen stöds också.
 1. *Kartdata:* banor vars yta ligger inuti en större klubbyta grupperas under klubben; banor med samma namnstam (t.ex. "Bokskogens … Gamla banan" och "… Nya banan") eller samma operatör inom 4 km grupperas också. Två banor med samma namn döljs aldrig – bara verkliga dubbletter (samma namn *och* i stort sett samma yta) slås ihop.
 2. *Slingor i en gemensam yta:* om en klubb är inlagd som en yta med t.ex. 36 hål delas hålen upp i slingor genom att följa banan (nästa håls tee nära föregående green), eller via taggen `golf:course` om den finns. Användaren väljer slinga; 9-hålsslingor kan kombineras till 18 hål.
 3. *Slopetabellen:* banor som finns i slopetabellen för klubben (Banadministration) visas också, även om de saknas i kartdata.
 4. *Manuellt:* "Lägg till en bana på klubben" skapar en ny bana med klubben förifylld; par och index fylls i från scorekortet (tomma fält, inga påhittade värden).
 
 **I appen:** "Alla banor i Sverige" visar klubbar; klubbar med flera banor fälls ut. I "Spela golf" visas klubben med alla sina banor (namn och antal hål) och ingen bana väljs automatiskt när det finns flera. 9-hålsbanor stöds (9-hålsvärdering, hålindex 1–9).
+
+## Väder
+Två separata sammanhang som inte skriver över varandra:
+- **Startsidan** visar vädret där du är (din position, med ortnamn), eller en plats du valt själv. Positionen kontrolleras när appen öppnas eller kommer tillbaka från bakgrunden. Ny plats och ny prognos hämtas först när du flyttat mer än 5 km; prognosen förnyas efter 30 minuter. En prognos visas aldrig för en annan plats än den gäller, och aldrig om den är äldre än 3 timmar. Utan platsbehörighet får du en förklaring och kan söka fram en plats (Open-Meteos ortsökning, gratis utan nyckel).
+- **Ronden** visar vädret vid banan så länge ronden pågår. När ronden avslutas visar startsidan åter din position. Tidigare valdes "första sparade banan" som startsidans väderplats – det var orsaken till att Båstad fastnade.
 
 ## Hämtning av kartdata (OpenStreetMap)
 **Orsak till HTTP 504 (åtgärdat):** den tidigare frågan använde `map_to_area` (en av Overpass tyngsta operationer), hämtade alla golfobjekt (`nwr[golf]`) och varje sjö som korsade banan med hela sin geometri (`nwr[natural=water] … out geom`). Nära stora sjöar blev svaret enormt, servern hann inte klart och svarade 504. Vid tomt svar gjordes dessutom en andra, större fråga.
